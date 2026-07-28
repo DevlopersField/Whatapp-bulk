@@ -19,6 +19,8 @@ export class QueueManager {
       id: `task_${Date.now()}_${idx}`,
       recipient,
       messagePayload: compileTemplate(template, recipient),
+      mediaUrl: config?.mediaUrl || null,
+      mediaType: config?.mediaType || 'auto',
       status: 'PENDING', // PENDING, PROCESSING, SENT, FAILED
       attempts: 0,
       maxAttempts: 3,

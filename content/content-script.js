@@ -30,13 +30,30 @@ async function handleExecuteTask(task) {
   const adapter = await getAdapter();
 
   await adapter.openConversation(task.recipient.phone);
-  await adapter.injectPayload(task.messagePayload);
-  await adapter.triggerSend();
+
+  if (task.mediaBlob) {
+    const ext = task.mediaType === 'video' ? 'mp4' : 'jpg';
+    const file = new File([task.mediaBlob], `attachment.${ext}`, {
+      type: task.mediaBlob.type || (task.mediaType === 'video' ? 'video/mp4' : 'image/jpeg'),
+    });
+    await adapter.sendMediaWithCaption(file, task.messagePayload);
+  } else {
+    await adapter.injectPayload(task.messagePayload);
+    await adapter.triggerSend();
+  }
 
   return { success: true };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'CHECK_SESSION') {
+    getAdapter()
+      .then((adapter) => adapter.validateSession())
+      .then((connected) => sendResponse({ connected }))
+      .catch(() => sendResponse({ connected: false }));
+    return true;
+  }
+
   if (message?.type !== 'EXECUTE_TASK') return false;
 
   handleExecuteTask(message.payload)

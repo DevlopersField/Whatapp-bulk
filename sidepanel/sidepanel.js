@@ -3,17 +3,31 @@ import { extractTags, compileTemplate } from '../core/template-engine.js';
 import { QueueManager } from '../core/queue-manager.js';
 
 const queueManager = new QueueManager();
+const MAX_RECIPIENTS = 100;
 
 // --- DOM references -------------------------------------------------------
 
 const csvFileInput = document.getElementById('csv-file-input');
 const manualPasteInput = document.getElementById('manual-paste-input');
+const quickAddPhoneInput = document.getElementById('quickadd-phone-input');
+const quickAddNameInput = document.getElementById('quickadd-name-input');
+const btnQuickAdd = document.getElementById('btn-quickadd');
 const recordCountEl = document.getElementById('record-count');
 const detectedTagsEl = document.getElementById('detected-tags');
+const recipientWarningEl = document.getElementById('recipient-warning');
 
 const templateInput = document.getElementById('template-input');
 const chipContainer = document.getElementById('dynamic-chip-container');
 const previewOutput = document.getElementById('template-preview-output');
+const mediaUrlInput = document.getElementById('media-url-input');
+const mediaTypeInput = document.getElementById('media-type-input');
+const mediaPreviewThumb = document.getElementById('media-preview-thumb');
+const mediaPreviewVideoTag = document.getElementById('media-preview-video-tag');
+
+const testPhoneInput = document.getElementById('test-phone-input');
+const btnSendTest = document.getElementById('btn-send-test');
+const testSendStatusEl = document.getElementById('test-send-status');
+const btnRecheckConnection = document.getElementById('btn-recheck-connection');
 
 const minDelayInput = document.getElementById('min-delay-input');
 const maxDelayInput = document.getElementById('max-delay-input');
@@ -34,15 +48,40 @@ const connectionBadge = document.getElementById('connection-badge');
 
 // --- Local state ------------------------------------------------------------
 
-let parsedRecords = [];
+let recipients = [];
 
 // --- Recipient ingestion ----------------------------------------------------
 
+function showRecipientWarning(message) {
+  if (!message) {
+    recipientWarningEl.hidden = true;
+    recipientWarningEl.textContent = '';
+    return;
+  }
+  recipientWarningEl.hidden = false;
+  recipientWarningEl.textContent = message;
+}
+
+function applyRecipientCap(list) {
+  if (list.length > MAX_RECIPIENTS) {
+    showRecipientWarning(
+      `Only the first ${MAX_RECIPIENTS} recipients are kept (bulk cap). ${list.length - MAX_RECIPIENTS} dropped.`
+    );
+    return list.slice(0, MAX_RECIPIENTS);
+  }
+  showRecipientWarning('');
+  return list;
+}
+
+function setRecipients(list) {
+  recipients = applyRecipientCap(list);
+  recordCountEl.textContent = String(recipients.length);
+  renderTemplatePreview();
+}
+
 function handleCSVText(rawText) {
   const { records } = parseCSV(rawText);
-  parsedRecords = records;
-  recordCountEl.textContent = String(records.length);
-  renderTemplatePreview();
+  setRecipients(records);
 }
 
 csvFileInput.addEventListener('change', async () => {
@@ -55,6 +94,18 @@ csvFileInput.addEventListener('change', async () => {
 manualPasteInput.addEventListener('input', () => {
   if (manualPasteInput.value.trim().length === 0) return;
   handleCSVText(manualPasteInput.value);
+});
+
+btnQuickAdd.addEventListener('click', () => {
+  const phone = quickAddPhoneInput.value.replace(/[^\d]/g, '');
+  if (!phone) {
+    showRecipientWarning('Enter a phone number before adding.');
+    return;
+  }
+  const name = quickAddNameInput.value.trim();
+  setRecipients([...recipients, { phone, name }]);
+  quickAddPhoneInput.value = '';
+  quickAddNameInput.value = '';
 });
 
 // --- Template composer --------------------------------------------------
@@ -71,18 +122,51 @@ function renderTags(template) {
   });
 }
 
+function resolveMediaType() {
+  const explicit = mediaTypeInput.value;
+  if (explicit !== 'auto') return explicit;
+  const url = mediaUrlInput.value.trim().toLowerCase();
+  return /\.(mp4|mov|webm|m4v)(\?|$)/.test(url) ? 'video' : 'image';
+}
+
+function renderMediaPreview() {
+  const url = mediaUrlInput.value.trim();
+
+  if (!url) {
+    mediaPreviewThumb.hidden = true;
+    mediaPreviewVideoTag.hidden = true;
+    return;
+  }
+
+  if (resolveMediaType() === 'video') {
+    mediaPreviewThumb.hidden = true;
+    mediaPreviewVideoTag.hidden = false;
+  } else {
+    mediaPreviewVideoTag.hidden = true;
+    mediaPreviewThumb.hidden = false;
+    mediaPreviewThumb.src = url;
+  }
+}
+
+mediaPreviewThumb.addEventListener('error', () => {
+  mediaPreviewThumb.hidden = true;
+});
+
 function renderTemplatePreview() {
   const template = templateInput.value;
   renderTags(template);
+  renderMediaPreview();
 
-  if (!template || parsedRecords.length === 0) {
+  if (!template || recipients.length === 0) {
     previewOutput.textContent = '';
     return;
   }
-  previewOutput.textContent = compileTemplate(template, parsedRecords[0]);
+  previewOutput.textContent = compileTemplate(template, recipients[0]);
 }
 
 templateInput.addEventListener('input', renderTemplatePreview);
+mediaUrlInput.addEventListener('input', renderMediaPreview);
+mediaTypeInput.addEventListener('change', renderMediaPreview);
 
 // --- Safety guardrail config ------------------------------------------------
 
@@ -92,6 +176,8 @@ function readConfig() {
     maxDelaySeconds: Number(maxDelayInput.value) || 45,
     hourlyBatchCap: Number(batchCapInput.value) || 25,
     jitterPercent: Number(jitterInput.value) || 20,
+    mediaUrl: mediaUrlInput.value.trim() || null,
+    mediaType: mediaTypeInput.value,
   };
 }
 
@@ -103,8 +189,8 @@ function setControlsRunning(isRunning) {
 }
 
 btnStart.addEventListener('click', async () => {
-  if (parsedRecords.length === 0) {
-    appendLog('No recipients parsed. Upload or paste CSV data first.');
+  if (recipients.length === 0) {
+    appendLog('No recipients added. Upload CSV, paste CSV, or add a phone number first.');
     return;
   }
   if (!templateInput.value.trim()) {
@@ -113,12 +199,12 @@ btnStart.addEventListener('click', async () => {
   }
 
   const config = readConfig();
-  await queueManager.initializeQueue(parsedRecords, templateInput.value, config);
+  await queueManager.initializeQueue(recipients, templateInput.value, config);
   await queueManager.setEngineStatus('RUNNING');
 
   chrome.runtime.sendMessage({ type: 'ENGINE_START' });
   setControlsRunning(true);
-  appendLog(`Queue started: ${parsedRecords.length} recipients.`);
+  appendLog(`Queue started: ${recipients.length} recipients.`);
 });
 
 btnPause.addEventListener('click', async () => {
@@ -175,6 +261,62 @@ function renderSnapshot({ queue, state }) {
   setControlsRunning(state.status === 'RUNNING');
 }
 
+function renderConnection(connected) {
+  connectionBadge.textContent = connected ? 'Connected' : 'Disconnected';
+  connectionBadge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
+}
+
+async function checkConnection() {
+  connectionBadge.textContent = 'Checking...';
+  const status = await chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' });
+  renderConnection(Boolean(status?.connected));
+}
+
+btnRecheckConnection.addEventListener('click', checkConnection);
+
+// --- Test send (bypasses the queue entirely) --------------------------
+
+btnSendTest.addEventListener('click', async () => {
+  const phone = testPhoneInput.value.replace(/[^\d]/g, '');
+  if (!phone) {
+    testSendStatusEl.textContent = 'Enter a phone number to send the test to.';
+    testSendStatusEl.className = 'test-send-status error';
+    return;
+  }
+  if (!templateInput.value.trim()) {
+    testSendStatusEl.textContent = 'Message template is empty.';
+    testSendStatusEl.className = 'test-send-status error';
+    return;
+  }
+
+  const sampleRecord = recipients[0] || {};
+  const messagePayload = compileTemplate(templateInput.value, sampleRecord);
+  const config = readConfig();
+
+  btnSendTest.disabled = true;
+  testSendStatusEl.textContent = 'Sending test message...';
+  testSendStatusEl.className = 'test-send-status';
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'SEND_TEST',
+    payload: {
+      phone,
+      messagePayload,
+      mediaUrl: config.mediaUrl,
+      mediaType: config.mediaType,
+    },
+  });
+
+  btnSendTest.disabled = false;
+  if (result?.success) {
+    testSendStatusEl.textContent = `Test sent to ${phone}.`;
+    testSendStatusEl.className = 'test-send-status success';
+  } else {
+    testSendStatusEl.textContent = `Failed: ${result?.error || 'unknown error'}`;
+    testSendStatusEl.className = 'test-send-status error';
+  }
+});
+
 // Listen for status broadcasts pushed from the background service worker.
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'QUEUE_SNAPSHOT') {
@@ -182,15 +324,18 @@ chrome.runtime.onMessage.addListener((message) => {
   } else if (message?.type === 'TASK_LOG') {
     appendLog(message.payload.message);
   } else if (message?.type === 'CONNECTION_STATUS') {
-    connectionBadge.textContent = message.payload.connected ? 'Connected' : 'Disconnected';
-    connectionBadge.className = `badge ${message.payload.connected ? 'connected' : 'disconnected'}`;
+    renderConnection(message.payload.connected);
   }
 });
 
-// Hydrate UI from any existing persisted queue on panel open.
+// Hydrate UI from any existing persisted queue on panel open, and actively
+// re-check the WhatsApp tab's session (rather than waiting for a push that
+// may have fired before this panel was even open to receive it).
 (async function hydrate() {
   const snapshot = await queueManager.getSnapshot();
   if (snapshot.state) {
     renderSnapshot(snapshot);
   }
+
+  await checkConnection();
 })();
