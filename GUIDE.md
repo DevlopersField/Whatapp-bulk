@@ -43,6 +43,12 @@ Chrome will ask for access to **all sites**, not just WhatsApp. That's needed so
 ## Media send is best-effort
 Attaching image/video works by faking a file-drop into WhatsApp's chat window. WhatsApp can change their page layout anytime, which can break this silently — if it does, the task fails and retries (shows up in the Failed count), it won't hang forever. Plain text messages don't depend on this and are far more reliable.
 
+## Badge says something other than "Connected"
+- **No WhatsApp Tab** — open `web.whatsapp.com` in a tab.
+- **Scan QR Code** — open WhatsApp on your phone and scan.
+- **Reloading...** — extension is re-injecting itself into an already-open tab, click Recheck in a second.
+- **Detection Error** — WhatsApp changed their page layout and the extension's detection needs updating; text sends may still work fine, only this status check is affected.
+
 ---
 
 ## Made a code change?

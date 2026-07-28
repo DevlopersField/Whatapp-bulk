@@ -261,15 +261,26 @@ function renderSnapshot({ queue, state }) {
   setControlsRunning(state.status === 'RUNNING');
 }
 
-function renderConnection(connected) {
-  connectionBadge.textContent = connected ? 'Connected' : 'Disconnected';
+const DISCONNECT_REASON_TEXT = {
+  'no-tab': 'No WhatsApp Tab',
+  qr: 'Scan QR Code',
+  'no-content-script': 'Reloading...',
+  error: 'Detection Error',
+  unknown: 'Disconnected',
+};
+
+function renderConnection(status) {
+  const connected = Boolean(status?.connected);
+  connectionBadge.textContent = connected
+    ? 'Connected'
+    : DISCONNECT_REASON_TEXT[status?.reason] || 'Disconnected';
   connectionBadge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
 }
 
 async function checkConnection() {
   connectionBadge.textContent = 'Checking...';
   const status = await chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' });
-  renderConnection(Boolean(status?.connected));
+  renderConnection(status);
 }
 
 btnRecheckConnection.addEventListener('click', checkConnection);
@@ -324,7 +335,7 @@ chrome.runtime.onMessage.addListener((message) => {
   } else if (message?.type === 'TASK_LOG') {
     appendLog(message.payload.message);
   } else if (message?.type === 'CONNECTION_STATUS') {
-    renderConnection(message.payload.connected);
+    renderConnection(message.payload);
   }
 });
 

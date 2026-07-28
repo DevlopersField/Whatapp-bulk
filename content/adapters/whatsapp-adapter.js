@@ -17,11 +17,24 @@ export class WhatsAppAdapter extends MessagingAdapter {
     super();
     // Prioritized fallback selector matrix
     this.SELECTORS = {
-      searchInput: [
+      qrCode: [
+        'canvas[aria-label="Scan this QR code to link a device!"]',
+        'canvas[aria-label="Scan me!"]',
+        'div[data-testid="qrcode"]',
+      ],
+      // Anchors for "the main app shell is loaded and a chat list is showing"
+      // — deliberately broad and redundant since WhatsApp Web's DOM/classes
+      // change across redesigns far more often than these structural landmarks.
+      loggedInAnchor: [
+        '#side',
+        '#pane-side',
+        'div[aria-label="Chat list"]',
+        'div[data-testid="chat-list"]',
         'div[contenteditable="true"][data-tab="3"]',
+        'div[title="Search or start new chat"]',
+        'button[aria-label="Search or start new chat"]',
+        'div[aria-label="Search input textbox"]',
         'p.selectable-text.copyable-text',
-        '#side div[contenteditable="true"]',
-        'xpath://div[@contenteditable="true"][@data-tab="3"]',
       ],
       chatInputField: [
         'footer div[contenteditable="true"][data-tab="10"]',
@@ -49,24 +62,55 @@ export class WhatsAppAdapter extends MessagingAdapter {
     };
   }
 
+  /**
+   * Returns { connected, reason }. reason is 'ready' | 'qr' | 'unknown' so
+   * the panel can tell "not logged in yet" apart from "detection itself
+   * failed" instead of collapsing both into a flat Disconnected.
+   */
+  async checkSessionState() {
+    const hasQr = await this._quickCheck(this.SELECTORS.qrCode, 1500);
+    if (hasQr) {
+      return { connected: false, reason: 'qr' };
+    }
+
+    const loggedIn = await this._quickCheck(this.SELECTORS.loggedInAnchor, 6000);
+    return loggedIn ? { connected: true, reason: 'ready' } : { connected: false, reason: 'unknown' };
+  }
+
   async validateSession() {
+    const { connected } = await this.checkSessionState();
+    return connected;
+  }
+
+  async _quickCheck(selectors, timeoutMs) {
     try {
-      await DOMSelectorEngine.resolveElement(this.SELECTORS.searchInput, 5000);
+      await DOMSelectorEngine.resolveElement(selectors, timeoutMs);
       return true;
     } catch (e) {
       return false;
     }
   }
 
+  /**
+   * Deep-link routing avoids complex DOM contact search steps, but setting
+   * location.href always triggers a full page reload — even same-origin —
+   * which destroys this script's JS context immediately. So this can only
+   * ever navigate-and-return here; it cannot wait for the resulting chat to
+   * load, because there is no "after" left to await in this instance. The
+   * caller is responsible for resuming the task once the reloaded page's
+   * fresh content script re-runs (see content-script.js's pending-task
+   * handoff). Returns { navigated } so the caller knows which case applied.
+   */
   async openConversation(phoneDigits) {
     const sanitizedNumber = phoneDigits.replace(/[^\d]/g, '');
-    const directURI = `https://web.whatsapp.com/send?phone=${sanitizedNumber}`;
 
-    // Deep-link routing avoids complex DOM contact search steps
     if (!window.location.href.includes(sanitizedNumber)) {
-      window.location.href = directURI;
-      await DOMSelectorEngine.resolveElement(this.SELECTORS.chatInputField, 15000);
+      window.location.href = `https://web.whatsapp.com/send?phone=${sanitizedNumber}`;
+      return { navigated: true };
     }
+
+    await DOMSelectorEngine.resolveElement(this.SELECTORS.chatInputField, 15000);
+    return { navigated: false };
   }
 
   async injectPayload(textMessage) {

@@ -112,8 +112,9 @@ body::after {
 
 .app-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   padding: 2px 4px 6px;
 }
 
@@ -122,6 +123,7 @@ body::after {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  white-space: nowrap;
   background: linear-gradient(90deg, #ffffff, var(--accent) 140%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -136,6 +138,7 @@ body::after {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .badge.connected {
