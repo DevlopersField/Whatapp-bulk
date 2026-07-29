@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk Outreach Panel</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h2>Outreach Control Panel</h2>
+      <div class="header-status">
+        <div id="connection-badge" class="badge disconnected">Disconnected</div>
+        <button id="btn-recheck-connection" class="link-btn" type="button" title="Re-check WhatsApp session">Recheck</button>
+      </div>
+    </header>
+
+    <!-- Recipient Data Ingestion Module -->
+    <section class="panel-section">
+      <h3>1. Recipient Ingestion</h3>
+      <div class="form-group">
+        <label for="csv-file-input">Upload CSV Data File</label>
+        <input type="file" id="csv-file-input" accept=".csv">
+      </div>
+      <div class="form-group">
+        <label for="manual-paste-input">Manual CSV Input</label>
+        <textarea id="manual-paste-input" rows="3" placeholder="phone,name,company&#10;15550199,John,Acme Corp"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="quickadd-phone-input">Add Single Phone Number</label>
+        <div class="inline-add-row">
+          <input type="text" id="quickadd-phone-input" placeholder="Phone e.g. 15550199">
+          <input type="text" id="quickadd-name-input" placeholder="Name (optional)">
+          <button id="btn-quickadd" class="btn secondary btn-compact" type="button">Add</button>
+        </div>
+      </div>
+      <div class="data-summary">
+        <div>Parsed Records: <span id="record-count">0</span> / <span id="record-cap">100</span></div>
+        <div>Detected Tags: <span id="detected-tags">None</span></div>
+      </div>
+      <div id="recipient-warning" class="warning-text" hidden></div>
+    </section>
+
+    <!-- Message Template Composer Module -->
+    <section class="panel-section">
+      <h3>2. Message Composer</h3>
+      <div class="form-group">
+        <label for="template-input">Message Template</label>
+        <textarea id="template-input" rows="4" placeholder="Hello {name}, hope all is well at {company}..."></textarea>
+      </div>
+      <div id="dynamic-chip-container" class="chip-container"></div>
+      <div class="grid-2col">
+        <div class="form-group">
+          <label for="media-url-input">Media URL (image/video, optional)</label>
+          <input type="text" id="media-url-input" placeholder="https://example.com/photo.jpg">
+        </div>
+        <div class="form-group">
+          <label for="media-type-input">Media Type</label>
+          <select id="media-type-input">
+            <option value="auto">Auto-detect</option>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+          </select>
+        </div>
+      </div>
+      <div class="preview-box">
+        <label>Preview (Record #1):</label>
+        <div id="template-preview-output" class="preview-content"></div>
+        <img id="media-preview-thumb" class="media-preview-thumb" hidden alt="Media preview">
+        <div id="media-preview-video-tag" class="media-preview-tag" hidden>🎬 Video attached</div>
+      </div>
+      <div class="form-group test-send-row">
+        <label for="test-phone-input">Send Test To</label>
+        <div class="inline-add-row inline-add-row-2">
+          <input type="text" id="test-phone-input" placeholder="Your phone e.g. 15550199">
+          <button id="btn-send-test" class="btn secondary btn-compact" type="button">Send Test</button>
+        </div>
+        <div id="test-send-status" class="test-send-status"></div>
+      </div>
+    </section>
+
+    <!-- Automation Configuration Guardrails -->
+    <section class="panel-section">
+      <h3>3. Safety Guardrails</h3>
+      <div class="grid-2col">
+        <div class="form-group">
+          <label for="min-delay-input">Min Delay (s)</label>
+          <input type="number" id="min-delay-input" value="15" min="5">
+        </div>
+        <div class="form-group">
+          <label for="max-delay-input">Max Delay (s)</label>
+          <input type="number" id="max-delay-input" value="45" min="10">
+        </div>
+      </div>
+      <div class="grid-2col">
+        <div class="form-group">
+          <label for="batch-cap-input">Hourly Batch Cap</label>
+          <input type="number" id="batch-cap-input" value="25" min="1">
+        </div>
+        <div class="form-group">
+          <label for="jitter-input">Delay Variance (%)</label>
+          <input type="number" id="jitter-input" value="20" min="0" max="100">
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-Time Queue Operations Monitor -->
+    <section class="panel-section">
+      <h3>4. Queue Operations</h3>
+      <div class="button-group">
+        <button id="btn-start-queue" class="btn primary">Start Processing</button>
+        <button id="btn-pause-queue" class="btn secondary" disabled>Pause</button>
+        <button id="btn-clear-queue" class="btn danger">Clear Queue</button>
+      </div>
+      <div class="progress-container">
+        <div id="progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+      <div class="queue-status-summary">
+        <span class="status-tag pending">Pending: <b id="cnt-pending">0</b></span>
+        <span class="status-tag sending">Active: <b id="cnt-active">0</b></span>
+        <span class="status-tag sent">Sent: <b id="cnt-sent">0</b></span>
+        <span class="status-tag failed">Failed: <b id="cnt-failed">0</b></span>
+      </div>
+      <div id="queue-log-list" class="log-list"></div>
+    </section>
+  </div>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
