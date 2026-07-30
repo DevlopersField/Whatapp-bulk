@@ -10,7 +10,16 @@ const queueManager = new QueueManager();
 const WHATSAPP_URL_PATTERN = 'https://web.whatsapp.com/*';
 const RECOVERY_ALARM = 'outreach-recovery-tick';
 const STALL_THRESHOLD_MS = 45_000; // heartbeat older than this = abandoned task
-const MAX_MEDIA_BYTES = 16 * 1024 * 1024; // WhatsApp's own rough media ceiling
+// URL-fetched media is never stored — it's fetched fresh from the network
+// each time it's actually about to be sent, so it isn't bound by
+// chrome.storage.session's 10MB quota the way an uploaded file is. This
+// keeps a high but sane ceiling for real HD/large video pulled from a link.
+const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+// Uploaded files DO get stashed in chrome.storage.session (hard-capped at
+// 10MB, base64 inflates ~1.33x) so this stays well under that regardless of
+// what the side panel already gates client-side — defense in depth.
+const MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+const UPLOADED_MEDIA_KEY = 'outreach_uploaded_media';
 
 let dispatchTimer = null;
 let activeTabId = null;
@@ -64,6 +73,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async sendResponse
     case 'FETCH_MEDIA_BLOB':
       fetchMediaBlob(message.payload.mediaUrl)
+        .then((blob) => sendResponse({ blob }))
+        .catch((error) => sendResponse({ error: error.message }));
+      return true; // async sendResponse
+    case 'STORE_UPLOADED_MEDIA':
+      storeUploadedMedia(message.payload)
+        .then(() => sendResponse({ success: true }))
+        .catch((error) => sendResponse({ success: false, error: error.message }));
+      return true; // async sendResponse
+    case 'FETCH_UPLOADED_MEDIA':
+      fetchUploadedMediaBlob()
         .then((blob) => sendResponse({ blob }))
         .catch((error) => sendResponse({ error: error.message }));
       return true; // async sendResponse
@@ -142,7 +161,7 @@ async function checkConnectionStatus() {
  * purpose since it's a manual, single, user-triggered action for verifying
  * the template/media works before committing to a full batch.
  */
-async function sendTestMessage({ phone, messagePayload, mediaUrl, mediaType }) {
+async function sendTestMessage({ phone, messagePayload, mediaUrl, mediaType, useUploadedMedia, sendAsDocument }) {
   if (!phone) {
     return { success: false, error: 'No test phone number provided.' };
   }
@@ -154,6 +173,8 @@ async function sendTestMessage({ phone, messagePayload, mediaUrl, mediaType }) {
       messagePayload,
       mediaUrl,
       mediaType,
+      useUploadedMedia,
+      sendAsDocument,
     });
     log(
       result?.success
@@ -385,6 +406,8 @@ async function sendExecuteTask(tabId, task) {
     messagePayload: task.messagePayload,
     mediaUrl: task.mediaUrl,
     mediaType: task.mediaType,
+    useUploadedMedia: task.useUploadedMedia,
+    sendAsDocument: task.sendAsDocument,
   };
 
   const ack = await sendTabMessageWithRetry(tabId, { type: 'EXECUTE_TASK', payload });
@@ -392,6 +415,40 @@ async function sendExecuteTask(tabId, task) {
     return waitForTaskResult(task.id);
   }
   return ack;
+}
+
+/**
+ * A locally uploaded file is stored once (base64, JSON-safe) in
+ * chrome.storage.session — not chrome.storage.local — since it's only
+ * needed for the lifetime of the current send job, and session storage
+ * survives service worker restarts (unlike a plain module variable) without
+ * writing the file to disk. Base64/JSON keeps this bulletproof across any
+ * Chrome version, rather than betting on Blob support in storage APIs.
+ */
+async function storeUploadedMedia({ base64, mimeType, mediaType }) {
+  const approxBytes = Math.ceil((base64.length * 3) / 4);
+  if (approxBytes > MAX_UPLOAD_BYTES) {
+    throw new Error(`Media exceeds ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB limit.`);
+  }
+  await chrome.storage.session.set({ [UPLOADED_MEDIA_KEY]: { base64, mimeType, mediaType } });
+}
+
+async function fetchUploadedMediaBlob() {
+  const stored = await chrome.storage.session.get(UPLOADED_MEDIA_KEY);
+  const record = stored[UPLOADED_MEDIA_KEY];
+  if (!record) {
+    throw new Error('No uploaded media found — re-upload the file.');
+  }
+  return base64ToBlob(record.base64, record.mimeType);
+}
+
+function base64ToBlob(base64, mimeType) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
 }
 
 // --- Status broadcast helpers -----------------------------------------

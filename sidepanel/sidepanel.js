@@ -4,6 +4,11 @@ import { QueueManager } from '../core/queue-manager.js';
 
 const queueManager = new QueueManager();
 const MAX_RECIPIENTS = 100;
+// chrome.storage.session is hard-capped at 10MB total (not raisable, even
+// with extra permissions) and base64 inflates raw bytes by ~1.33x, so the
+// real ceiling for an uploaded file is well under 10MB raw. 7MB leaves
+// headroom for the small pending-task JSON also living in that storage.
+const MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
 
 // --- DOM references -------------------------------------------------------
 
@@ -23,11 +28,25 @@ const mediaUrlInput = document.getElementById('media-url-input');
 const mediaTypeInput = document.getElementById('media-type-input');
 const mediaPreviewThumb = document.getElementById('media-preview-thumb');
 const mediaPreviewVideoTag = document.getElementById('media-preview-video-tag');
+const mediaFileInput = document.getElementById('media-file-input');
+const sendAsDocumentInput = document.getElementById('send-as-document-input');
+const uploadFileNameEl = document.getElementById('upload-file-name');
+const mediaTabButtons = document.querySelectorAll('.media-tab');
+const mediaTabPanels = {
+  upload: document.getElementById('media-tab-upload'),
+  link: document.getElementById('media-tab-link'),
+};
 
 const testPhoneInput = document.getElementById('test-phone-input');
 const btnSendTest = document.getElementById('btn-send-test');
 const testSendStatusEl = document.getElementById('test-send-status');
 const btnRecheckConnection = document.getElementById('btn-recheck-connection');
+// [data-marker] excludes the link button — it shares .fmt-btn for styling
+// but has its own click handler (see btnInsertLink below), not a wrap marker.
+const fmtButtons = document.querySelectorAll('.fmt-btn[data-marker]');
+const btnInsertLink = document.getElementById('btn-insert-link');
+const btnCopyShareLink = document.getElementById('btn-copy-share-link');
+const shareLinkStatusEl = document.getElementById('share-link-status');
 
 const minDelayInput = document.getElementById('min-delay-input');
 const maxDelayInput = document.getElementById('max-delay-input');
@@ -49,6 +68,10 @@ const connectionBadge = document.getElementById('connection-badge');
 // --- Local state ------------------------------------------------------------
 
 let recipients = [];
+let activeMediaTab = 'upload';
+let hasUploadedMedia = false;
+let uploadedMediaType = null;
+let uploadedObjectUrl = null;
 
 // --- Recipient ingestion ----------------------------------------------------
 
@@ -122,34 +145,199 @@ function renderTags(template) {
   });
 }
 
-function resolveMediaType() {
+// --- Formatting toolbar (WhatsApp's own markdown, not HTML) ----------------
+
+function wrapSelection(marker) {
+  const start = templateInput.selectionStart;
+  const end = templateInput.selectionEnd;
+  const value = templateInput.value;
+  const selected = value.slice(start, end) || 'text';
+
+  templateInput.value = `${value.slice(0, start)}${marker}${selected}${marker}${value.slice(end)}`;
+  templateInput.focus();
+  templateInput.setSelectionRange(start + marker.length, start + marker.length + selected.length);
+  renderTemplatePreview();
+}
+
+fmtButtons.forEach((btn) => {
+  btn.addEventListener('click', () => wrapSelection(btn.dataset.marker));
+});
+
+function renderWhatsAppMarkdown(text) {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  return escaped
+    .replace(/```([^`]+)```/g, '<code>$1</code>')
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    // WhatsApp auto-detects raw URLs and turns them into a live link
+    // preview card on its own — this just mirrors that in our preview.
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function insertAtCursor(text) {
+  const start = templateInput.selectionStart;
+  const end = templateInput.selectionEnd;
+  const value = templateInput.value;
+
+  templateInput.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+  templateInput.focus();
+  const cursor = start + text.length;
+  templateInput.setSelectionRange(cursor, cursor);
+  renderTemplatePreview();
+}
+
+btnInsertLink.addEventListener('click', () => {
+  const url = prompt('Paste the link (https://...)');
+  if (!url || !url.trim()) return;
+
+  const start = templateInput.selectionStart;
+  const precedingChar = templateInput.value.slice(0, start).slice(-1);
+  const needsLeadingSpace = precedingChar && !/\s/.test(precedingChar);
+
+  insertAtCursor(`${needsLeadingSpace ? ' ' : ''}${url.trim()}`);
+});
+
+// --- Share as link (wa.me click-to-chat, no automation involved) -----------
+
+function buildShareLink(messageText) {
+  const phone = testPhoneInput.value.replace(/[^\d]/g, '');
+  const base = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
+  return `${base}?text=${encodeURIComponent(messageText)}`;
+}
+
+btnCopyShareLink.addEventListener('click', async () => {
+  const template = templateInput.value.trim();
+  if (!template) {
+    shareLinkStatusEl.textContent = 'Write a message first.';
+    return;
+  }
+  const sampleRecord = recipients[0] || {};
+  const messageText = compileTemplate(template, sampleRecord);
+  const link = buildShareLink(messageText);
+
+  try {
+    await navigator.clipboard.writeText(link);
+    shareLinkStatusEl.textContent = 'Link copied!';
+  } catch (e) {
+    shareLinkStatusEl.textContent = link;
+  }
+  setTimeout(() => {
+    shareLinkStatusEl.textContent = '';
+  }, 4000);
+});
+
+function resolveLinkMediaType() {
   const explicit = mediaTypeInput.value;
   if (explicit !== 'auto') return explicit;
   const url = mediaUrlInput.value.trim().toLowerCase();
   return /\.(mp4|mov|webm|m4v)(\?|$)/.test(url) ? 'video' : 'image';
 }
 
-function renderMediaPreview() {
-  const url = mediaUrlInput.value.trim();
-
-  if (!url) {
+function showPreview(kind, srcForImage) {
+  if (kind === 'video') {
+    mediaPreviewThumb.hidden = true;
+    mediaPreviewVideoTag.hidden = false;
+  } else if (kind === 'image') {
+    mediaPreviewVideoTag.hidden = true;
+    mediaPreviewThumb.hidden = false;
+    mediaPreviewThumb.src = srcForImage;
+  } else {
     mediaPreviewThumb.hidden = true;
     mediaPreviewVideoTag.hidden = true;
+  }
+}
+
+function renderMediaPreview() {
+  if (activeMediaTab === 'upload') {
+    if (!hasUploadedMedia) {
+      showPreview(null);
+      return;
+    }
+    showPreview(uploadedMediaType, uploadedObjectUrl);
     return;
   }
 
-  if (resolveMediaType() === 'video') {
-    mediaPreviewThumb.hidden = true;
-    mediaPreviewVideoTag.hidden = false;
-  } else {
-    mediaPreviewVideoTag.hidden = true;
-    mediaPreviewThumb.hidden = false;
-    mediaPreviewThumb.src = url;
+  const url = mediaUrlInput.value.trim();
+  if (!url) {
+    showPreview(null);
+    return;
   }
+  showPreview(resolveLinkMediaType(), url);
 }
 
 mediaPreviewThumb.addEventListener('error', () => {
   mediaPreviewThumb.hidden = true;
+});
+
+// --- Media tabs (Upload File / Paste Link) ------------------------------
+
+function setActiveMediaTab(tab) {
+  activeMediaTab = tab;
+  mediaTabButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  mediaTabPanels.upload.hidden = tab !== 'upload';
+  mediaTabPanels.link.hidden = tab !== 'link';
+  renderMediaPreview();
+}
+
+mediaTabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => setActiveMediaTab(btn.dataset.tab));
+});
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+mediaFileInput.addEventListener('change', async () => {
+  const file = mediaFileInput.files?.[0];
+  if (!file) return;
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    uploadFileNameEl.hidden = false;
+    uploadFileNameEl.textContent = `Too large (${Math.round(file.size / 1024 / 1024)}MB) — max ${MAX_UPLOAD_BYTES / 1024 / 1024}MB.`;
+    mediaFileInput.value = '';
+    hasUploadedMedia = false;
+    renderMediaPreview();
+    return;
+  }
+
+  uploadFileNameEl.hidden = false;
+  uploadFileNameEl.textContent = 'Uploading...';
+
+  const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+  const buffer = await file.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'STORE_UPLOADED_MEDIA',
+    payload: { base64, mimeType: file.type, mediaType },
+  });
+
+  if (!result?.success) {
+    uploadFileNameEl.textContent = `Upload failed: ${result?.error || 'unknown error'}`;
+    hasUploadedMedia = false;
+    renderMediaPreview();
+    return;
+  }
+
+  if (uploadedObjectUrl) URL.revokeObjectURL(uploadedObjectUrl);
+  uploadedObjectUrl = URL.createObjectURL(file);
+  uploadedMediaType = mediaType;
+  hasUploadedMedia = true;
+  uploadFileNameEl.textContent = `${file.name} ready.`;
+  renderMediaPreview();
 });
 
 function renderTemplatePreview() {
@@ -157,11 +345,15 @@ function renderTemplatePreview() {
   renderTags(template);
   renderMediaPreview();
 
-  if (!template || recipients.length === 0) {
+  if (!template) {
     previewOutput.textContent = '';
     return;
   }
-  previewOutput.textContent = compileTemplate(template, recipients[0]);
+  // Preview against recipient #1 once loaded; before that, still preview
+  // against an empty record so {tags} just show literally instead of the
+  // whole preview going blank while you're still writing the message.
+  const compiled = compileTemplate(template, recipients[0] || {});
+  previewOutput.innerHTML = renderWhatsAppMarkdown(compiled);
 }
 
 templateInput.addEventListener('input', renderTemplatePreview);
@@ -171,13 +363,16 @@ mediaTypeInput.addEventListener('change', renderMediaPreview);
 // --- Safety guardrail config ------------------------------------------------
 
 function readConfig() {
+  const useUploadedMedia = activeMediaTab === 'upload' && hasUploadedMedia;
   return {
     minDelaySeconds: Number(minDelayInput.value) || 15,
     maxDelaySeconds: Number(maxDelayInput.value) || 45,
     hourlyBatchCap: Number(batchCapInput.value) || 25,
     jitterPercent: Number(jitterInput.value) || 20,
-    mediaUrl: mediaUrlInput.value.trim() || null,
-    mediaType: mediaTypeInput.value,
+    mediaUrl: activeMediaTab === 'link' ? mediaUrlInput.value.trim() || null : null,
+    mediaType: activeMediaTab === 'upload' ? uploadedMediaType || 'auto' : mediaTypeInput.value,
+    useUploadedMedia,
+    sendAsDocument: sendAsDocumentInput.checked,
   };
 }
 
@@ -315,6 +510,8 @@ btnSendTest.addEventListener('click', async () => {
       messagePayload,
       mediaUrl: config.mediaUrl,
       mediaType: config.mediaType,
+      useUploadedMedia: config.useUploadedMedia,
+      sendAsDocument: config.sendAsDocument,
     },
   });
 

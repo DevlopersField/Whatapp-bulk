@@ -21,6 +21,8 @@ export class QueueManager {
       messagePayload: compileTemplate(template, recipient),
       mediaUrl: config?.mediaUrl || null,
       mediaType: config?.mediaType || 'auto',
+      useUploadedMedia: Boolean(config?.useUploadedMedia),
+      sendAsDocument: Boolean(config?.sendAsDocument),
       status: 'PENDING', // PENDING, PROCESSING, SENT, FAILED
       attempts: 0,
       maxAttempts: 3,

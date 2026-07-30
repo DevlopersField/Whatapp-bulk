@@ -59,6 +59,29 @@ export class WhatsAppAdapter extends MessagingAdapter {
         'div[aria-placeholder="Add a caption"]',
         'xpath://div[@aria-label="Add a caption"]',
       ],
+      attachButton: [
+        'span[data-icon="plus-rounded"]',
+        'span[data-icon="clip"]',
+        'div[title="Attach"]',
+        'button[title="Attach"]',
+        'div[aria-label="Attach"]',
+      ],
+      documentMenuItem: [
+        'li[data-testid="mi-attach-document"]',
+        'div[aria-label="Document"]',
+        'span[data-icon="document"]',
+        'xpath://div[contains(text(), "Document")]',
+        'xpath://li[contains(., "Document")]',
+      ],
+      // WhatsApp Web keeps a distinct hidden <input> per attach type — the
+      // document one takes any file type, unlike the image/video one. NOT
+      // falling back to a bare 'input[type="file"]' here on purpose: that
+      // would risk silently grabbing the image/video input instead and
+      // sending through the compressed path without telling anyone.
+      documentFileInput: [
+        'input[type="file"][accept="*"]',
+        'input[type="file"]:not([accept*="image"])',
+      ],
     };
   }
 
@@ -141,6 +164,64 @@ export class WhatsAppAdapter extends MessagingAdapter {
     }
 
     await this._clickSendButton(this.SELECTORS.sendButton, 8000);
+  }
+
+  /**
+   * Sends a file through WhatsApp's "Document" attach path instead of
+   * "Photos & videos" — WhatsApp re-encodes/compresses anything sent through
+   * the latter, but passes documents through untouched. This is the most
+   * speculative part of the adapter: it depends on WhatsApp's attach-menu
+   * DOM, which isn't verifiable without a live session, so it's best-effort
+   * and will need selector updates if WhatsApp changes that menu.
+   */
+  async sendAsDocument(file, captionText) {
+    await this._attachAsDocument(file);
+
+    if (captionText) {
+      const { node: captionNode } = await DOMSelectorEngine.resolveElement(
+        this.SELECTORS.mediaCaptionInput,
+        8000
+      );
+      await this._typeIntoField(captionNode, captionText);
+    }
+
+    await this._clickSendButton(this.SELECTORS.sendButton, 8000);
+  }
+
+  async _attachAsDocument(file) {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+
+    try {
+      const { node: input } = await DOMSelectorEngine.resolveElement(
+        this.SELECTORS.documentFileInput,
+        1500
+      );
+      input.files = dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    } catch (e) {
+      // Fall through to the menu-driven path below.
+    }
+
+    const { node: attachBtn } = await DOMSelectorEngine.resolveElement(
+      this.SELECTORS.attachButton,
+      5000
+    );
+    attachBtn.click();
+
+    const { node: documentItem } = await DOMSelectorEngine.resolveElement(
+      this.SELECTORS.documentMenuItem,
+      4000
+    );
+    documentItem.click();
+
+    const { node: input } = await DOMSelectorEngine.resolveElement(
+      this.SELECTORS.documentFileInput,
+      4000
+    );
+    input.files = dataTransfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   async _dropFileIntoComposer(file) {

@@ -37,11 +37,8 @@ async function reportConnection(state) {
   });
 }
 
-async function fetchMediaAsFile(mediaUrl, mediaType) {
-  const response = await chrome.runtime.sendMessage({
-    type: 'FETCH_MEDIA_BLOB',
-    payload: { mediaUrl },
-  });
+async function fetchMediaAsFile(request, mediaType) {
+  const response = await chrome.runtime.sendMessage(request);
   if (response?.error) {
     throw new Error(response.error);
   }
@@ -53,8 +50,19 @@ async function fetchMediaAsFile(mediaUrl, mediaType) {
 }
 
 async function executeSend(adapter, task) {
-  if (task.mediaUrl) {
-    const file = await fetchMediaAsFile(task.mediaUrl, task.mediaType);
+  let file = null;
+  if (task.useUploadedMedia) {
+    file = await fetchMediaAsFile({ type: 'FETCH_UPLOADED_MEDIA' }, task.mediaType);
+  } else if (task.mediaUrl) {
+    file = await fetchMediaAsFile(
+      { type: 'FETCH_MEDIA_BLOB', payload: { mediaUrl: task.mediaUrl } },
+      task.mediaType
+    );
+  }
+
+  if (file && task.sendAsDocument) {
+    await adapter.sendAsDocument(file, task.messagePayload);
+  } else if (file) {
     await adapter.sendMediaWithCaption(file, task.messagePayload);
   } else {
     await adapter.injectPayload(task.messagePayload);
