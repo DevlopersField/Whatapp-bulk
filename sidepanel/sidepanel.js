@@ -45,6 +45,9 @@ const btnRecheckConnection = document.getElementById('btn-recheck-connection');
 // but has its own click handler (see btnInsertLink below), not a wrap marker.
 const fmtButtons = document.querySelectorAll('.fmt-btn[data-marker]');
 const btnInsertLink = document.getElementById('btn-insert-link');
+const linkInsertRow = document.getElementById('link-insert-row');
+const linkInsertInput = document.getElementById('link-insert-input');
+const btnConfirmLink = document.getElementById('btn-confirm-link');
 const btnCopyShareLink = document.getElementById('btn-copy-share-link');
 const shareLinkStatusEl = document.getElementById('share-link-status');
 
@@ -191,15 +194,40 @@ function insertAtCursor(text) {
   renderTemplatePreview();
 }
 
-btnInsertLink.addEventListener('click', () => {
-  const url = prompt('Paste the link (https://...)');
-  if (!url || !url.trim()) return;
+// Deliberately not using window.prompt() here — blocking native dialogs are
+// unreliable inside extension surfaces (popups auto-dismiss them on blur,
+// and side panels have had the same class of issues). An inline row that
+// lives in the page itself always works.
+let savedLinkCursorPos = null;
 
-  const start = templateInput.selectionStart;
-  const precedingChar = templateInput.value.slice(0, start).slice(-1);
+btnInsertLink.addEventListener('click', () => {
+  savedLinkCursorPos = templateInput.selectionStart;
+  linkInsertInput.value = '';
+  linkInsertRow.hidden = false;
+  linkInsertInput.focus();
+});
+
+function confirmLinkInsert() {
+  const url = linkInsertInput.value.trim();
+  linkInsertRow.hidden = true;
+  if (!url) return;
+
+  const cursorPos = savedLinkCursorPos ?? templateInput.value.length;
+  const precedingChar = templateInput.value.slice(0, cursorPos).slice(-1);
   const needsLeadingSpace = precedingChar && !/\s/.test(precedingChar);
 
-  insertAtCursor(`${needsLeadingSpace ? ' ' : ''}${url.trim()}`);
+  templateInput.setSelectionRange(cursorPos, cursorPos);
+  insertAtCursor(`${needsLeadingSpace ? ' ' : ''}${url}`);
+}
+
+btnConfirmLink.addEventListener('click', confirmLinkInsert);
+linkInsertInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    confirmLinkInsert();
+  } else if (event.key === 'Escape') {
+    linkInsertRow.hidden = true;
+  }
 });
 
 // --- Share as link (wa.me click-to-chat, no automation involved) -----------

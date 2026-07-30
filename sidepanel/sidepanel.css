@@ -260,6 +260,10 @@ textarea {
   grid-template-columns: 1fr auto;
 }
 
+.inline-add-row[hidden] {
+  display: none;
+}
+
 .warning-text {
   margin-top: 8px;
   font-size: 11px;

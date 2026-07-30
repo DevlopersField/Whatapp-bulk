@@ -53,6 +53,15 @@ export class WhatsAppAdapter extends MessagingAdapter {
         'div[data-testid="conversation-panel-wrapper"]',
         'xpath://div[@id="main"]',
       ],
+      // Direct assignment on this hidden input is tried before the drag-drop
+      // simulation below — many sites (WhatsApp included, per reports) don't
+      // reliably accept a synthetic DragEvent, since it isn't a real
+      // OS-originated drag session. Setting .files directly and firing
+      // 'change' is the more reliable technique automation tools use.
+      mediaFileInput: [
+        'input[type="file"][accept*="image"][accept*="video"]',
+        'input[type="file"][accept^="image"]',
+      ],
       mediaCaptionInput: [
         'div[aria-label="Add a caption"]',
         'div[contenteditable="true"][data-tab="10"]',
@@ -225,13 +234,26 @@ export class WhatsAppAdapter extends MessagingAdapter {
   }
 
   async _dropFileIntoComposer(file) {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+
+    try {
+      const { node: input } = await DOMSelectorEngine.resolveElement(
+        this.SELECTORS.mediaFileInput,
+        1500
+      );
+      input.files = dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    } catch (e) {
+      // No matching hidden input found in time — fall back to simulating
+      // an actual OS-style drag-and-drop onto the conversation panel.
+    }
+
     const { node: dropTarget } = await DOMSelectorEngine.resolveElement(
       this.SELECTORS.conversationDropZone,
       8000
     );
-
-    const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(file);
 
     const dragEventSequence = ['dragenter', 'dragover', 'drop'];
     for (const eventName of dragEventSequence) {
