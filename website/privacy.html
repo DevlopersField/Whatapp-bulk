@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Enterprise Outreach Engine</title>
+  <meta name="description" content="Privacy policy for the Enterprise Outreach Engine Chrome extension.">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="nav">
+    <div class="wrap">
+      <a class="brand" href="index.html">
+        <img src="assets/icon.png" alt="">
+        Enterprise Outreach Engine
+      </a>
+      <nav class="links">
+        <a href="index.html">Home</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="content-section">
+    <div class="wrap">
+      <div class="panel content-card">
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: August 9, 2026</p>
+
+        <h2>Summary</h2>
+        <p>
+          Enterprise Outreach Engine is a Chrome extension that automates sending
+          messages through your own logged-in WhatsApp Web session. It runs
+          entirely inside your browser. There is no backend server operated by
+          this extension, no account/sign-up, no analytics, and no data is sold
+          or shared with any third party.
+        </p>
+
+        <h2>What data the extension handles</h2>
+        <ul>
+          <li><strong>Recipient list</strong> (phone numbers, names, and any custom columns from your CSV) — stored in <code>chrome.storage.local</code>, on your device only, so a queue survives a browser restart. Cleared when you clear the queue or uninstall the extension.</li>
+          <li><strong>Message template and settings</strong> (delays, hourly cap, etc.) — same local, on-device storage.</li>
+          <li><strong>Uploaded image/video</strong> — held temporarily in <code>chrome.storage.session</code>, which Chrome automatically clears when the browser closes. It is never uploaded anywhere outside your machine.</li>
+          <li><strong>Media pasted as a URL</strong> — fetched directly by the extension at send time and handed straight to WhatsApp Web's own uploader. Not stored by the extension at any point.</li>
+        </ul>
+        <p>None of the above ever leaves your computer except to WhatsApp itself, through the normal WhatsApp Web page you're already logged into.</p>
+
+        <h2>Why each permission is needed</h2>
+        <table class="permissions">
+          <tr><th>Permission</th><th>Purpose</th></tr>
+          <tr><td><code>storage</code></td><td>Save your recipient queue and settings locally so they survive a restart.</td></tr>
+          <tr><td><code>tabs</code> / <code>activeTab</code></td><td>Find or open the WhatsApp Web tab the extension drives.</td></tr>
+          <tr><td><code>scripting</code></td><td>Inject the content script that types/sends messages inside WhatsApp Web.</td></tr>
+          <tr><td><code>alarms</code></td><td>Recover the send queue if the background service worker is suspended mid-batch.</td></tr>
+          <tr><td><code>sidePanel</code></td><td>Show the extension's control panel in Chrome's side panel.</td></tr>
+          <tr><td>Host access (all sites)</td><td>Lets the <strong>Paste Link</strong> media feature fetch a user-supplied media URL without being blocked by that site's CORS policy. The <strong>Upload File</strong> path doesn't need this at all.</td></tr>
+        </table>
+
+        <h2>No third-party sharing</h2>
+        <p>
+          This extension does not sell, rent, or transmit your data to any
+          third party, ad network, or analytics service. It does not use
+          tracking pixels or cookies of its own.
+        </p>
+
+        <h2>Your WhatsApp account</h2>
+        <p>
+          Messages are sent through your own WhatsApp account, under your own
+          responsibility. Use of this extension is subject to WhatsApp's own
+          Terms of Service — bulk or unsolicited messaging can result in your
+          number being restricted or banned by WhatsApp. This extension is not
+          affiliated with, endorsed by, or connected to WhatsApp or Meta.
+        </p>
+
+        <h2>Changes to this policy</h2>
+        <p>
+          If this policy changes, the updated version will be posted on this
+          page with a new "Last updated" date.
+        </p>
+
+        <h2>Contact</h2>
+        <p>Questions about this policy: <a href="mailto:virajdev3052003@gmail.com">virajdev3052003@gmail.com</a></p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p><a href="index.html">Back to Home</a></p>
+  </footer>
+
+</body>
+</html>
