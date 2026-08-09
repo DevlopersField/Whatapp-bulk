@@ -54,7 +54,8 @@
           <button type="button" class="fmt-btn" data-marker="```" title="Monospace">{ }</button>
           <button type="button" class="fmt-btn" id="btn-insert-link" title="Insert Link">🔗</button>
         </div>
-        <div id="link-insert-row" class="inline-add-row inline-add-row-2" hidden>
+        <div id="link-insert-row" class="inline-add-row" hidden>
+          <input type="text" id="link-text-input" placeholder="Link text (optional)">
           <input type="text" id="link-insert-input" placeholder="https://...">
           <button type="button" id="btn-confirm-link" class="btn secondary btn-compact">Insert</button>
         </div>
@@ -133,7 +134,7 @@
       <div class="grid-2col">
         <div class="form-group">
           <label for="batch-cap-input">Hourly Batch Cap</label>
-          <input type="number" id="batch-cap-input" value="25" min="1">
+          <input type="number" id="batch-cap-input" value="300" min="1">
         </div>
         <div class="form-group">
           <label for="jitter-input">Delay Variance (%)</label>

@@ -47,6 +47,7 @@ const fmtButtons = document.querySelectorAll('.fmt-btn[data-marker]');
 const btnInsertLink = document.getElementById('btn-insert-link');
 const linkInsertRow = document.getElementById('link-insert-row');
 const linkInsertInput = document.getElementById('link-insert-input');
+const linkTextInput = document.getElementById('link-text-input');
 const btnConfirmLink = document.getElementById('btn-confirm-link');
 const btnCopyShareLink = document.getElementById('btn-copy-share-link');
 const shareLinkStatusEl = document.getElementById('share-link-status');
@@ -203,32 +204,37 @@ let savedLinkCursorPos = null;
 btnInsertLink.addEventListener('click', () => {
   savedLinkCursorPos = templateInput.selectionStart;
   linkInsertInput.value = '';
+  linkTextInput.value = '';
   linkInsertRow.hidden = false;
-  linkInsertInput.focus();
+  linkTextInput.focus();
 });
 
 function confirmLinkInsert() {
   const url = linkInsertInput.value.trim();
+  const linkText = linkTextInput.value.trim();
   linkInsertRow.hidden = true;
   if (!url) return;
 
   const cursorPos = savedLinkCursorPos ?? templateInput.value.length;
   const precedingChar = templateInput.value.slice(0, cursorPos).slice(-1);
   const needsLeadingSpace = precedingChar && !/\s/.test(precedingChar);
+  const linkContent = linkText ? `${linkText}: ${url}` : url;
 
   templateInput.setSelectionRange(cursorPos, cursorPos);
-  insertAtCursor(`${needsLeadingSpace ? ' ' : ''}${url}`);
+  insertAtCursor(`${needsLeadingSpace ? ' ' : ''}${linkContent}`);
 }
 
 btnConfirmLink.addEventListener('click', confirmLinkInsert);
-linkInsertInput.addEventListener('keydown', (event) => {
+function handleLinkRowKeydown(event) {
   if (event.key === 'Enter') {
     event.preventDefault();
     confirmLinkInsert();
   } else if (event.key === 'Escape') {
     linkInsertRow.hidden = true;
   }
-});
+}
+linkInsertInput.addEventListener('keydown', handleLinkRowKeydown);
+linkTextInput.addEventListener('keydown', handleLinkRowKeydown);
 
 // --- Share as link (wa.me click-to-chat, no automation involved) -----------
 
@@ -395,7 +401,7 @@ function readConfig() {
   return {
     minDelaySeconds: Number(minDelayInput.value) || 15,
     maxDelaySeconds: Number(maxDelayInput.value) || 45,
-    hourlyBatchCap: Number(batchCapInput.value) || 25,
+    hourlyBatchCap: Number(batchCapInput.value) || 300,
     jitterPercent: Number(jitterInput.value) || 20,
     mediaUrl: activeMediaTab === 'link' ? mediaUrlInput.value.trim() || null : null,
     mediaType: activeMediaTab === 'upload' ? uploadedMediaType || 'auto' : mediaTypeInput.value,

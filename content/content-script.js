@@ -37,16 +37,27 @@ async function reportConnection(state) {
   });
 }
 
+// chrome.runtime.sendMessage is JSON-only — a Blob/ArrayBuffer sent from the
+// background flattens to `{}` on arrival — so the background sends base64
+// and this rebuilds the real bytes on this side instead.
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function fetchMediaAsFile(request, mediaType) {
   const response = await chrome.runtime.sendMessage(request);
   if (response?.error) {
     throw new Error(response.error);
   }
   const ext = mediaType === 'video' ? 'mp4' : 'jpg';
-  const blob = response.blob;
-  return new File([blob], `attachment.${ext}`, {
-    type: blob.type || (mediaType === 'video' ? 'video/mp4' : 'image/jpeg'),
-  });
+  const bytes = base64ToBytes(response.base64);
+  const mimeType = response.mimeType || (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
+  return new File([bytes], `attachment.${ext}`, { type: mimeType });
 }
 
 async function executeSend(adapter, task) {

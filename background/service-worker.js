@@ -73,7 +73,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async sendResponse
     case 'FETCH_MEDIA_BLOB':
       fetchMediaBlob(message.payload.mediaUrl)
-        .then((blob) => sendResponse({ blob }))
+        .then(async (blob) => sendResponse({ base64: await blobToBase64(blob), mimeType: blob.type }))
         .catch((error) => sendResponse({ error: error.message }));
       return true; // async sendResponse
     case 'STORE_UPLOADED_MEDIA':
@@ -82,8 +82,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((error) => sendResponse({ success: false, error: error.message }));
       return true; // async sendResponse
     case 'FETCH_UPLOADED_MEDIA':
-      fetchUploadedMediaBlob()
-        .then((blob) => sendResponse({ blob }))
+      fetchUploadedMediaBase64()
+        .then(({ base64, mimeType }) => sendResponse({ base64, mimeType }))
         .catch((error) => sendResponse({ error: error.message }));
       return true; // async sendResponse
     case 'TASK_RESULT':
@@ -281,7 +281,7 @@ function computeNextDelayMs(config) {
 }
 
 async function checkHourlyCap(state, config) {
-  const cap = config?.hourlyBatchCap ?? 25;
+  const cap = config?.hourlyBatchCap ?? 300;
   const windowMs = 3_600_000;
   const now = Date.now();
   const windowStart = state.windowStart ?? now;
@@ -377,8 +377,10 @@ async function sendTabMessageWithRetry(tabId, message, attempts = 4, delayMs = 7
  * Fetches a user-supplied media URL from the background context so
  * host_permissions (not page CORS policy) governs access — a content
  * script fetch would be blocked by whatever CORS policy the media host
- * sets. The resulting Blob is handed to the content script for the actual
- * DOM drop-to-attach sequence, since only the content script has DOM access.
+ * sets. The resulting Blob is base64-encoded (see blobToBase64) before it
+ * crosses to the content script, since chrome.runtime.sendMessage silently
+ * flattens a raw Blob/ArrayBuffer to `{}` — it's JSON-only, not a
+ * structured-clone channel like postMessage.
  */
 async function fetchMediaBlob(mediaUrl) {
   const response = await fetch(mediaUrl);
@@ -390,6 +392,17 @@ async function fetchMediaBlob(mediaUrl) {
     throw new Error(`Media exceeds ${MAX_MEDIA_BYTES / (1024 * 1024)}MB limit.`);
   }
   return blob;
+}
+
+async function blobToBase64(blob) {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
 /**
@@ -433,22 +446,16 @@ async function storeUploadedMedia({ base64, mimeType, mediaType }) {
   await chrome.storage.session.set({ [UPLOADED_MEDIA_KEY]: { base64, mimeType, mediaType } });
 }
 
-async function fetchUploadedMediaBlob() {
+// Already stored as base64 (see storeUploadedMedia) — handed back as-is
+// rather than round-tripped through a Blob, which chrome.runtime.sendMessage
+// can't carry anyway (see blobToBase64 above).
+async function fetchUploadedMediaBase64() {
   const stored = await chrome.storage.session.get(UPLOADED_MEDIA_KEY);
   const record = stored[UPLOADED_MEDIA_KEY];
   if (!record) {
     throw new Error('No uploaded media found — re-upload the file.');
   }
-  return base64ToBlob(record.base64, record.mimeType);
-}
-
-function base64ToBlob(base64, mimeType) {
-  const byteChars = atob(base64);
-  const byteNumbers = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) {
-    byteNumbers[i] = byteChars.charCodeAt(i);
-  }
-  return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
+  return { base64: record.base64, mimeType: record.mimeType };
 }
 
 // --- Status broadcast helpers -----------------------------------------
