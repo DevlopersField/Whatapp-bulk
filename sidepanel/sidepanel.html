@@ -61,6 +61,12 @@
         </div>
         <textarea id="template-input" rows="4" placeholder="Hello {name}, hope all is well at {company}..."></textarea>
       </div>
+      <div class="draft-row">
+        <button id="btn-save-draft" class="btn secondary btn-compact" type="button">Save as Draft</button>
+        <button id="btn-load-draft" class="btn secondary btn-compact" type="button">Load Draft</button>
+        <button id="btn-clear-draft" class="btn secondary btn-compact" type="button">Clear Draft</button>
+        <span id="draft-status" class="draft-status"></span>
+      </div>
       <div id="dynamic-chip-container" class="chip-container"></div>
 
       <div class="form-group">
@@ -161,6 +167,16 @@
         <span class="status-tag failed">Failed: <b id="cnt-failed">0</b></span>
       </div>
       <div id="queue-log-list" class="log-list"></div>
+    </section>
+
+    <!-- Local Send History (last 5 days, browser-only) -->
+    <section class="panel-section">
+      <h3>5. History (Last 5 Days)</h3>
+      <div class="history-toolbar">
+        <span id="history-count" class="history-count">0 sent</span>
+        <button id="btn-clear-history" class="btn secondary btn-compact" type="button">Clear History</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
     </section>
   </div>
   <script type="module" src="sidepanel.js"></script>

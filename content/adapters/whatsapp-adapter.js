@@ -62,9 +62,16 @@ export class WhatsAppAdapter extends MessagingAdapter {
         'input[type="file"][accept*="image"][accept*="video"]',
         'input[type="file"][accept^="image"]',
       ],
+      // Deliberately does NOT include the bare chat-box selector
+      // ('div[contenteditable="true"][data-tab="10"]') as a fallback here —
+      // that selector also matches chatInputField. If the media modal fails
+      // to open (e.g. the drag-drop simulation below didn't register), a
+      // shared fallback would silently resolve to the plain chat box
+      // instead, typing the caption there and sending it as a normal text
+      // message with no error — exactly the "sends text instead of photo"
+      // failure mode this list must not reintroduce.
       mediaCaptionInput: [
         'div[aria-label="Add a caption"]',
-        'div[contenteditable="true"][data-tab="10"]',
         'div[aria-placeholder="Add a caption"]',
         'xpath://div[@aria-label="Add a caption"]',
       ],
@@ -164,11 +171,17 @@ export class WhatsAppAdapter extends MessagingAdapter {
   async sendMediaWithCaption(file, captionText) {
     await this._dropFileIntoComposer(file);
 
+    // Resolving the caption box (even when there's no caption to type)
+    // is the confirmation that WhatsApp's media preview modal actually
+    // opened. Skipping this when captionText is empty would let a failed
+    // drop go undetected and fall through to clicking whatever "Send"
+    // button is currently on screen — which, with no modal open, is the
+    // plain chat send button.
+    const { node: captionNode } = await DOMSelectorEngine.resolveElement(
+      this.SELECTORS.mediaCaptionInput,
+      8000
+    );
     if (captionText) {
-      const { node: captionNode } = await DOMSelectorEngine.resolveElement(
-        this.SELECTORS.mediaCaptionInput,
-        8000
-      );
       await this._typeIntoField(captionNode, captionText);
     }
 
@@ -186,11 +199,11 @@ export class WhatsAppAdapter extends MessagingAdapter {
   async sendAsDocument(file, captionText) {
     await this._attachAsDocument(file);
 
+    const { node: captionNode } = await DOMSelectorEngine.resolveElement(
+      this.SELECTORS.mediaCaptionInput,
+      8000
+    );
     if (captionText) {
-      const { node: captionNode } = await DOMSelectorEngine.resolveElement(
-        this.SELECTORS.mediaCaptionInput,
-        8000
-      );
       await this._typeIntoField(captionNode, captionText);
     }
 

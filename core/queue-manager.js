@@ -9,6 +9,11 @@ export class QueueManager {
     this.QUEUE_KEY = 'outreach_queue_data';
     this.STATE_KEY = 'outreach_engine_state';
     this.CONFIG_KEY = 'outreach_config_data';
+    this.HISTORY_KEY = 'outreach_history_data';
+    // History is browser-local only (chrome.storage.local, never synced)
+    // and self-prunes past this window so it can't grow forever.
+    this.HISTORY_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
+    this.HISTORY_MAX_ENTRIES = 1000;
   }
 
   /**
@@ -118,7 +123,53 @@ export class QueueManager {
       [this.STATE_KEY]: state,
     });
 
+    // Only log terminal outcomes — a failure that still has retries left
+    // leaves task.status back at 'PENDING' and isn't final yet.
+    if (task.status === 'SENT' || task.status === 'FAILED') {
+      await this._appendHistoryEntry({
+        id: task.id,
+        phone: task.recipient?.phone || '',
+        name: task.recipient?.name || '',
+        message: task.messagePayload,
+        hadMedia: Boolean(task.mediaUrl || task.useUploadedMedia),
+        status: task.status,
+        error: task.errorDetail,
+        timestamp: task.lastUpdated,
+      });
+    }
+
     return { task, state };
+  }
+
+  /**
+   * Appends one entry to the persistent send history, pruning anything
+   * older than HISTORY_MAX_AGE_MS and capping total size so this can't
+   * grow unbounded across long-running usage.
+   */
+  async _appendHistoryEntry(entry) {
+    const data = await chrome.storage.local.get(this.HISTORY_KEY);
+    const cutoff = Date.now() - this.HISTORY_MAX_AGE_MS;
+    const history = (data[this.HISTORY_KEY] || []).filter((item) => item.timestamp >= cutoff);
+
+    history.unshift(entry);
+    if (history.length > this.HISTORY_MAX_ENTRIES) {
+      history.length = this.HISTORY_MAX_ENTRIES;
+    }
+
+    await chrome.storage.local.set({ [this.HISTORY_KEY]: history });
+  }
+
+  /**
+   * Returns history entries from the last HISTORY_MAX_AGE_MS, newest first.
+   */
+  async getHistory() {
+    const data = await chrome.storage.local.get(this.HISTORY_KEY);
+    const cutoff = Date.now() - this.HISTORY_MAX_AGE_MS;
+    return (data[this.HISTORY_KEY] || []).filter((item) => item.timestamp >= cutoff);
+  }
+
+  async clearHistory() {
+    await chrome.storage.local.remove(this.HISTORY_KEY);
   }
 
   /**

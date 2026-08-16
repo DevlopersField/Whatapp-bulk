@@ -9,6 +9,7 @@ const MAX_RECIPIENTS = 100;
 // real ceiling for an uploaded file is well under 10MB raw. 7MB leaves
 // headroom for the small pending-task JSON also living in that storage.
 const MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
+const DRAFT_KEY = 'outreach_draft_data';
 
 // --- DOM references -------------------------------------------------------
 
@@ -22,6 +23,10 @@ const detectedTagsEl = document.getElementById('detected-tags');
 const recipientWarningEl = document.getElementById('recipient-warning');
 
 const templateInput = document.getElementById('template-input');
+const btnSaveDraft = document.getElementById('btn-save-draft');
+const btnLoadDraft = document.getElementById('btn-load-draft');
+const btnClearDraft = document.getElementById('btn-clear-draft');
+const draftStatusEl = document.getElementById('draft-status');
 const chipContainer = document.getElementById('dynamic-chip-container');
 const previewOutput = document.getElementById('template-preview-output');
 const mediaUrlInput = document.getElementById('media-url-input');
@@ -68,6 +73,10 @@ const cntSent = document.getElementById('cnt-sent');
 const cntFailed = document.getElementById('cnt-failed');
 const logList = document.getElementById('queue-log-list');
 const connectionBadge = document.getElementById('connection-badge');
+
+const historyListEl = document.getElementById('history-list');
+const historyCountEl = document.getElementById('history-count');
+const btnClearHistory = document.getElementById('btn-clear-history');
 
 // --- Local state ------------------------------------------------------------
 
@@ -324,6 +333,54 @@ mediaTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => setActiveMediaTab(btn.dataset.tab));
 });
 
+// --- Draft (template + link-based media settings) ------------------------
+// Uploaded file bytes are deliberately NOT part of the draft — they already
+// live in chrome.storage.session via STORE_UPLOADED_MEDIA, which is capped
+// and cleared per-session, so drafts only remember the message text and
+// the "Paste Link" media config. Re-attach an uploaded file after loading
+// a draft.
+
+function flashDraftStatus(text) {
+  draftStatusEl.textContent = text;
+  setTimeout(() => {
+    if (draftStatusEl.textContent === text) draftStatusEl.textContent = '';
+  }, 2500);
+}
+
+btnSaveDraft.addEventListener('click', async () => {
+  const draft = {
+    template: templateInput.value,
+    mediaUrl: mediaUrlInput.value,
+    mediaType: mediaTypeInput.value,
+    sendAsDocument: sendAsDocumentInput.checked,
+    activeMediaTab: activeMediaTab === 'link' ? 'link' : 'upload',
+    savedAt: Date.now(),
+  };
+  await chrome.storage.local.set({ [DRAFT_KEY]: draft });
+  flashDraftStatus('Draft saved.');
+});
+
+btnLoadDraft.addEventListener('click', async () => {
+  const data = await chrome.storage.local.get(DRAFT_KEY);
+  const draft = data[DRAFT_KEY];
+  if (!draft) {
+    flashDraftStatus('No saved draft.');
+    return;
+  }
+  templateInput.value = draft.template || '';
+  mediaUrlInput.value = draft.mediaUrl || '';
+  mediaTypeInput.value = draft.mediaType || 'auto';
+  sendAsDocumentInput.checked = Boolean(draft.sendAsDocument);
+  setActiveMediaTab(draft.activeMediaTab === 'link' ? 'link' : 'upload');
+  renderTemplatePreview();
+  flashDraftStatus('Draft loaded.');
+});
+
+btnClearDraft.addEventListener('click', async () => {
+  await chrome.storage.local.remove(DRAFT_KEY);
+  flashDraftStatus('Draft cleared.');
+});
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -559,10 +616,88 @@ btnSendTest.addEventListener('click', async () => {
   }
 });
 
+// --- Send history (last 5 days, browser-local, compact-by-default) --------
+
+function formatHistoryTime(timestamp) {
+  return new Date(timestamp).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderHistory(entries) {
+  historyCountEl.textContent = `${entries.length} in last 5 days`;
+  historyListEl.innerHTML = '';
+
+  if (entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = 'No messages sent yet.';
+    historyListEl.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    // Compact by default — a row summary only. Clicking toggles the full
+    // message/error into view instead of always rendering full text.
+    item.addEventListener('click', () => item.classList.toggle('expanded'));
+
+    const row = document.createElement('div');
+    row.className = 'history-item-row';
+
+    const who = document.createElement('span');
+    who.className = 'history-item-who';
+    who.textContent = entry.name ? `${entry.name} (${entry.phone})` : entry.phone;
+
+    const meta = document.createElement('div');
+    meta.className = 'history-item-meta';
+
+    const statusTag = document.createElement('span');
+    statusTag.className = `status-tag ${entry.status === 'SENT' ? 'sent' : 'failed'}`;
+    statusTag.textContent = entry.status === 'SENT' ? 'Sent' : 'Failed';
+
+    const time = document.createElement('span');
+    time.className = 'history-item-time';
+    time.textContent = formatHistoryTime(entry.timestamp);
+
+    meta.append(statusTag, time);
+    row.append(who, meta);
+
+    const full = document.createElement('div');
+    full.className = 'history-item-full';
+    full.textContent = (entry.hadMedia ? '[Media attached] ' : '') + (entry.message || '');
+
+    if (entry.error) {
+      const errorLine = document.createElement('div');
+      errorLine.className = 'history-item-error';
+      errorLine.textContent = entry.error;
+      full.appendChild(errorLine);
+    }
+
+    item.append(row, full);
+    historyListEl.appendChild(item);
+  });
+}
+
+async function refreshHistory() {
+  const entries = await queueManager.getHistory();
+  renderHistory(entries);
+}
+
+btnClearHistory.addEventListener('click', async () => {
+  await queueManager.clearHistory();
+  renderHistory([]);
+});
+
 // Listen for status broadcasts pushed from the background service worker.
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'QUEUE_SNAPSHOT') {
     renderSnapshot(message.payload);
+    refreshHistory();
   } else if (message?.type === 'TASK_LOG') {
     appendLog(message.payload.message);
   } else if (message?.type === 'CONNECTION_STATUS') {
@@ -580,4 +715,5 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 
   await checkConnection();
+  await refreshHistory();
 })();

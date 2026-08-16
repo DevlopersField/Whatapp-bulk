@@ -276,6 +276,19 @@ textarea {
   color: var(--accent);
 }
 
+.draft-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--spacing);
+}
+
+.draft-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .share-link-row {
   display: flex;
   align-items: center;
@@ -549,4 +562,87 @@ textarea {
 
 .log-list::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing);
+}
+
+.history-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 6px 2px;
+}
+
+.history-item {
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.history-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.history-item-who {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.history-item-time {
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.history-item-full {
+  display: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.history-item.expanded .history-item-full {
+  display: block;
+}
+
+.history-item-error {
+  color: var(--failed);
+  margin-top: 4px;
 }
