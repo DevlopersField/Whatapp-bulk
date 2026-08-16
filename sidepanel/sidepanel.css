@@ -1,29 +1,26 @@
 :root {
-  /* Liquid Glass: vivid moving color field behind, translucent frosted
-     panels floating on top with a bright specular edge. */
   --text-primary: #1c2440;
-  --text-muted: #4c5a7a;
-  --text-faint: #7987a8;
+  --text-muted: #6b7398;
+  --text-faint: #9aa1c2;
 
-  /* Accent + semantic */
-  --accent: #4f6bf0;
-  --accent-hover: #3c56d6;
-  --accent-soft: rgba(79, 107, 240, 0.22);
-  --pending: #5b6fee;
-  --sending: #e8940f;
-  --sent: #17a869;
-  --failed: #e6395a;
+  /* Accent + semantic — flat, solid colors */
+  --accent: #17181c;
+  --accent-hover: #000000;
+  --accent-soft: rgba(23, 24, 28, 0.08);
+  --pending: #5b5fef;
+  --sending: #e08a1e;
+  --sent: #1fa971;
+  --failed: #e14a5f;
 
-  /* Glass surface */
-  --glass-fill: rgba(255, 255, 255, 0.5);
-  --glass-fill-strong: rgba(255, 255, 255, 0.68);
-  --glass-highlight: rgba(255, 255, 255, 0.85);
-  --glass-edge: rgba(255, 255, 255, 0.6);
-  --glass-shadow: rgba(49, 57, 99, 0.22);
+  --header-bg: #17181c;
+  --page-bg: #f3f2ee;
+  --card-bg: #ffffff;
+  --border: #ececec;
+  --tag-bg: #f0f0ef;
 
-  --radius-lg: 0;
-  --radius-md: 0;
-  --radius-pill: 0;
+  --radius-lg: 18px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
   --spacing: 12px;
   font-size: 14px;
 }
@@ -41,46 +38,10 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text-primary);
   overflow-x: hidden;
-  background: #eef1fc;
-}
-
-/* --- The "liquid" environment: a slow-flowing vivid gradient the glass
-   panels float on top of and refract. Fixed so it reads as one continuous
-   atmosphere behind scrollable content. --- */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -20%;
-  z-index: 0;
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    #4f6bf0,
-    #2f4bd0,
-    #6ea8f5,
-    #1c3a9c,
-    #5a86f0,
-    #4f6bf0
-  );
-  filter: blur(60px) saturate(140%);
-  opacity: 0.65;
-  animation: liquid-spin 40s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes liquid-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body::before {
-    animation: none;
-  }
+  background: var(--page-bg);
 }
 
 .app-container {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--spacing);
@@ -89,20 +50,22 @@ body::before {
 
 .app-header {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  padding: 4px 6px 6px;
+  padding: 16px var(--spacing) 20px;
+  margin: calc(-1 * var(--spacing)) calc(-1 * var(--spacing)) 4px;
+  background: var(--header-bg);
+  border-radius: 0 0 22px 22px;
 }
 
 .app-header h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   white-space: nowrap;
-  color: #1c2440;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: #fff;
 }
 
 .badge {
@@ -113,19 +76,16 @@ body::before {
   padding: 5px 12px;
   border-radius: var(--radius-pill);
   white-space: nowrap;
-  background: var(--glass-fill-strong);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  border: 1px solid var(--glass-edge);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .badge.connected {
-  color: var(--sent);
+  color: #6fe3ab;
 }
 
 .badge.disconnected {
-  color: var(--failed);
+  color: #f28a97;
 }
 
 .header-status {
@@ -137,7 +97,7 @@ body::before {
 .link-btn {
   background: none;
   border: none;
-  color: var(--text-faint);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 10px;
   text-decoration: underline;
   cursor: pointer;
@@ -145,20 +105,17 @@ body::before {
 }
 
 .link-btn:hover {
-  color: var(--accent);
+  color: #fff;
 }
 
-/* --- Glass cards: translucent, blurred, with a bright top-edge highlight
-   simulating light catching the rim of the glass. --- */
+/* --- Flat cards: white surface, thin border, soft shadow --- */
 
 .panel-section {
-  background: var(--glass-fill);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  border: 1px solid var(--glass-edge);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--spacing) 16px 16px;
-  box-shadow: 0 8px 32px var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  box-shadow: 0 1px 3px rgba(28, 36, 64, 0.05);
 }
 
 .panel-section h3 {
@@ -194,14 +151,13 @@ select,
 textarea {
   width: 100%;
   padding: 9px 12px;
-  border: 1px solid var(--glass-edge);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-family: inherit;
   font-size: 13px;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--page-bg);
   color: var(--text-primary);
-  box-shadow: inset 0 1px 2px rgba(49, 57, 99, 0.08);
-  transition: box-shadow 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 input::placeholder,
@@ -212,8 +168,9 @@ textarea::placeholder {
 input:focus,
 textarea:focus {
   outline: none;
-  background: rgba(255, 255, 255, 0.6);
-  box-shadow: inset 0 1px 2px rgba(49, 57, 99, 0.08), 0 0 0 3px var(--accent-soft);
+  background: var(--card-bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 input[type="file"] {
@@ -223,19 +180,18 @@ input[type="file"] {
 input[type="file"]::file-selector-button {
   padding: 6px 14px;
   margin-right: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: none;
   border-radius: var(--radius-pill);
-  background: linear-gradient(135deg, var(--accent), #7b5cf0);
+  background: var(--accent);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(79, 107, 240, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  transition: box-shadow 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 input[type="file"]::file-selector-button:hover {
-  box-shadow: 0 2px 8px rgba(79, 107, 240, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: var(--accent-hover);
 }
 
 textarea {
@@ -268,8 +224,8 @@ textarea {
   margin-top: 8px;
   font-size: 11px;
   color: #8a5a05;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid var(--glass-edge);
+  background: #fff8ea;
+  border: 1px solid #f5e3ae;
   border-radius: var(--radius-md);
   padding: 7px 10px;
 }
@@ -282,8 +238,8 @@ textarea {
 }
 
 .chip-container .chip {
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid var(--glass-edge);
+  background: var(--accent-soft);
+  border: 1px solid #ddd9fb;
   border-radius: var(--radius-pill);
   padding: 3px 12px;
   font-size: 11px;
@@ -303,21 +259,20 @@ textarea {
 .fmt-btn {
   width: 30px;
   height: 30px;
-  border: 1px solid var(--glass-edge);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--page-bg);
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .fmt-btn:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -342,8 +297,8 @@ textarea {
 }
 
 .preview-content {
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid var(--glass-edge);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: 13px;
@@ -354,7 +309,7 @@ textarea {
 
 .preview-content strong { color: var(--text-primary); }
 .preview-content code {
-  background: rgba(49, 57, 99, 0.08);
+  background: #eceefa;
   padding: 0 4px;
   font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
 }
@@ -370,7 +325,7 @@ textarea {
   max-height: 140px;
   border-radius: var(--radius-md);
   object-fit: cover;
-  border: 1px solid var(--glass-edge);
+  border: 1px solid var(--border);
 }
 
 .media-preview-thumb[hidden],
@@ -383,8 +338,8 @@ textarea {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid var(--glass-edge);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 7px 10px;
 }
@@ -400,14 +355,17 @@ textarea {
   display: flex;
   gap: 6px;
   margin-bottom: 8px;
+  background: var(--tag-bg);
+  padding: 4px;
+  border-radius: var(--radius-pill);
 }
 
 .media-tab {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid var(--glass-edge);
+  border: none;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.4);
+  background: transparent;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
@@ -417,8 +375,7 @@ textarea {
 
 .media-tab.active {
   color: #fff;
-  background: linear-gradient(135deg, var(--accent), #7b5cf0);
-  box-shadow: 0 2px 10px rgba(79, 107, 240, 0.4);
+  background: var(--accent);
 }
 
 .media-tab-panel[hidden] {
@@ -444,7 +401,7 @@ textarea {
 .test-send-row {
   margin-top: var(--spacing);
   padding-top: var(--spacing);
-  border-top: 1px solid var(--glass-edge);
+  border-top: 1px solid var(--border);
 }
 
 .test-send-status {
@@ -477,15 +434,14 @@ textarea {
 .btn {
   flex: 1;
   padding: 10px 12px;
-  border: 1px solid var(--glass-edge);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--page-bg);
   color: var(--text-primary);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
-  transition: box-shadow 0.12s ease, transform 0.1s ease, background-color 0.15s ease;
+  transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
 .btn:active:not(:disabled) {
@@ -503,14 +459,13 @@ textarea {
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, var(--accent), #7b5cf0);
+  background: var(--accent);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.5);
-  box-shadow: 0 6px 20px rgba(79, 107, 240, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border-color: var(--accent);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent-hover), #6a49dd);
+  background: var(--accent-hover);
 }
 
 .btn.danger {
@@ -525,8 +480,7 @@ textarea {
 .progress-container {
   width: 100%;
   height: 10px;
-  background: rgba(255, 255, 255, 0.35);
-  border: 1px solid var(--glass-edge);
+  background: var(--tag-bg);
   border-radius: var(--radius-pill);
   overflow: hidden;
   margin-bottom: var(--spacing);
@@ -534,7 +488,7 @@ textarea {
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), #7b5cf0);
+  background: var(--accent);
   border-radius: var(--radius-pill);
   transition: width 0.3s ease;
 }
@@ -551,8 +505,7 @@ textarea {
   font-variant-numeric: tabular-nums;
   padding: 5px 11px;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid var(--glass-edge);
+  background: var(--tag-bg);
   color: var(--text-muted);
 }
 
@@ -572,7 +525,7 @@ textarea {
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
   padding-top: 8px;
-  border-top: 1px solid var(--glass-edge);
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 4px;
