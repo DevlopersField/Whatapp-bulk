@@ -69,46 +69,9 @@
       </div>
       <div id="dynamic-chip-container" class="chip-container"></div>
 
-      <div class="form-group">
-        <label>Attach Image or Video (optional)</label>
-        <div class="media-tabs">
-          <button type="button" class="media-tab active" data-tab="upload">Upload File</button>
-          <button type="button" class="media-tab" data-tab="link">Paste Link</button>
-        </div>
-
-        <div id="media-tab-upload" class="media-tab-panel">
-          <input type="file" id="media-file-input" accept="image/*,video/*">
-          <div id="upload-file-name" class="upload-name" hidden></div>
-        </div>
-
-        <div id="media-tab-link" class="media-tab-panel" hidden>
-          <div class="grid-2col">
-            <div class="form-group">
-              <label for="media-url-input">Media URL</label>
-              <input type="text" id="media-url-input" placeholder="https://example.com/photo.jpg">
-            </div>
-            <div class="form-group">
-              <label for="media-type-input">Media Type</label>
-              <select id="media-type-input">
-                <option value="auto">Auto-detect</option>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="send-as-document-input">
-          <span>Send as Document (skip WhatsApp's video/photo compression — experimental)</span>
-        </label>
-      </div>
-
       <div class="preview-box">
         <label>Preview (Record #1):</label>
         <div id="template-preview-output" class="preview-content"></div>
-        <img id="media-preview-thumb" class="media-preview-thumb" hidden alt="Media preview">
-        <div id="media-preview-video-tag" class="media-preview-tag" hidden>🎬 Video attached</div>
         <div class="share-link-row">
           <button id="btn-copy-share-link" class="btn secondary btn-compact" type="button">Copy Shareable Link</button>
           <span id="share-link-status" class="share-link-status"></span>

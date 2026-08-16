@@ -4,11 +4,6 @@ import { QueueManager } from '../core/queue-manager.js';
 
 const queueManager = new QueueManager();
 const MAX_RECIPIENTS = 100;
-// chrome.storage.session is hard-capped at 10MB total (not raisable, even
-// with extra permissions) and base64 inflates raw bytes by ~1.33x, so the
-// real ceiling for an uploaded file is well under 10MB raw. 7MB leaves
-// headroom for the small pending-task JSON also living in that storage.
-const MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
 const DRAFT_KEY = 'outreach_draft_data';
 
 // --- DOM references -------------------------------------------------------
@@ -29,18 +24,6 @@ const btnClearDraft = document.getElementById('btn-clear-draft');
 const draftStatusEl = document.getElementById('draft-status');
 const chipContainer = document.getElementById('dynamic-chip-container');
 const previewOutput = document.getElementById('template-preview-output');
-const mediaUrlInput = document.getElementById('media-url-input');
-const mediaTypeInput = document.getElementById('media-type-input');
-const mediaPreviewThumb = document.getElementById('media-preview-thumb');
-const mediaPreviewVideoTag = document.getElementById('media-preview-video-tag');
-const mediaFileInput = document.getElementById('media-file-input');
-const sendAsDocumentInput = document.getElementById('send-as-document-input');
-const uploadFileNameEl = document.getElementById('upload-file-name');
-const mediaTabButtons = document.querySelectorAll('.media-tab');
-const mediaTabPanels = {
-  upload: document.getElementById('media-tab-upload'),
-  link: document.getElementById('media-tab-link'),
-};
 
 const testPhoneInput = document.getElementById('test-phone-input');
 const btnSendTest = document.getElementById('btn-send-test');
@@ -81,10 +64,6 @@ const btnClearHistory = document.getElementById('btn-clear-history');
 // --- Local state ------------------------------------------------------------
 
 let recipients = [];
-let activeMediaTab = 'upload';
-let hasUploadedMedia = false;
-let uploadedMediaType = null;
-let uploadedObjectUrl = null;
 
 // --- Recipient ingestion ----------------------------------------------------
 
@@ -274,71 +253,7 @@ btnCopyShareLink.addEventListener('click', async () => {
   }, 4000);
 });
 
-function resolveLinkMediaType() {
-  const explicit = mediaTypeInput.value;
-  if (explicit !== 'auto') return explicit;
-  const url = mediaUrlInput.value.trim().toLowerCase();
-  return /\.(mp4|mov|webm|m4v)(\?|$)/.test(url) ? 'video' : 'image';
-}
-
-function showPreview(kind, srcForImage) {
-  if (kind === 'video') {
-    mediaPreviewThumb.hidden = true;
-    mediaPreviewVideoTag.hidden = false;
-  } else if (kind === 'image') {
-    mediaPreviewVideoTag.hidden = true;
-    mediaPreviewThumb.hidden = false;
-    mediaPreviewThumb.src = srcForImage;
-  } else {
-    mediaPreviewThumb.hidden = true;
-    mediaPreviewVideoTag.hidden = true;
-  }
-}
-
-function renderMediaPreview() {
-  if (activeMediaTab === 'upload') {
-    if (!hasUploadedMedia) {
-      showPreview(null);
-      return;
-    }
-    showPreview(uploadedMediaType, uploadedObjectUrl);
-    return;
-  }
-
-  const url = mediaUrlInput.value.trim();
-  if (!url) {
-    showPreview(null);
-    return;
-  }
-  showPreview(resolveLinkMediaType(), url);
-}
-
-mediaPreviewThumb.addEventListener('error', () => {
-  mediaPreviewThumb.hidden = true;
-});
-
-// --- Media tabs (Upload File / Paste Link) ------------------------------
-
-function setActiveMediaTab(tab) {
-  activeMediaTab = tab;
-  mediaTabButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
-  });
-  mediaTabPanels.upload.hidden = tab !== 'upload';
-  mediaTabPanels.link.hidden = tab !== 'link';
-  renderMediaPreview();
-}
-
-mediaTabButtons.forEach((btn) => {
-  btn.addEventListener('click', () => setActiveMediaTab(btn.dataset.tab));
-});
-
-// --- Draft (template + link-based media settings) ------------------------
-// Uploaded file bytes are deliberately NOT part of the draft — they already
-// live in chrome.storage.session via STORE_UPLOADED_MEDIA, which is capped
-// and cleared per-session, so drafts only remember the message text and
-// the "Paste Link" media config. Re-attach an uploaded file after loading
-// a draft.
+// --- Draft (message template) --------------------------------------------
 
 function flashDraftStatus(text) {
   draftStatusEl.textContent = text;
@@ -350,10 +265,6 @@ function flashDraftStatus(text) {
 btnSaveDraft.addEventListener('click', async () => {
   const draft = {
     template: templateInput.value,
-    mediaUrl: mediaUrlInput.value,
-    mediaType: mediaTypeInput.value,
-    sendAsDocument: sendAsDocumentInput.checked,
-    activeMediaTab: activeMediaTab === 'link' ? 'link' : 'upload',
     savedAt: Date.now(),
   };
   await chrome.storage.local.set({ [DRAFT_KEY]: draft });
@@ -368,10 +279,6 @@ btnLoadDraft.addEventListener('click', async () => {
     return;
   }
   templateInput.value = draft.template || '';
-  mediaUrlInput.value = draft.mediaUrl || '';
-  mediaTypeInput.value = draft.mediaType || 'auto';
-  sendAsDocumentInput.checked = Boolean(draft.sendAsDocument);
-  setActiveMediaTab(draft.activeMediaTab === 'link' ? 'link' : 'upload');
   renderTemplatePreview();
   flashDraftStatus('Draft loaded.');
 });
@@ -381,60 +288,9 @@ btnClearDraft.addEventListener('click', async () => {
   flashDraftStatus('Draft cleared.');
 });
 
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-mediaFileInput.addEventListener('change', async () => {
-  const file = mediaFileInput.files?.[0];
-  if (!file) return;
-
-  if (file.size > MAX_UPLOAD_BYTES) {
-    uploadFileNameEl.hidden = false;
-    uploadFileNameEl.textContent = `Too large (${Math.round(file.size / 1024 / 1024)}MB) — max ${MAX_UPLOAD_BYTES / 1024 / 1024}MB.`;
-    mediaFileInput.value = '';
-    hasUploadedMedia = false;
-    renderMediaPreview();
-    return;
-  }
-
-  uploadFileNameEl.hidden = false;
-  uploadFileNameEl.textContent = 'Uploading...';
-
-  const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
-  const buffer = await file.arrayBuffer();
-  const base64 = arrayBufferToBase64(buffer);
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'STORE_UPLOADED_MEDIA',
-    payload: { base64, mimeType: file.type, mediaType },
-  });
-
-  if (!result?.success) {
-    uploadFileNameEl.textContent = `Upload failed: ${result?.error || 'unknown error'}`;
-    hasUploadedMedia = false;
-    renderMediaPreview();
-    return;
-  }
-
-  if (uploadedObjectUrl) URL.revokeObjectURL(uploadedObjectUrl);
-  uploadedObjectUrl = URL.createObjectURL(file);
-  uploadedMediaType = mediaType;
-  hasUploadedMedia = true;
-  uploadFileNameEl.textContent = `${file.name} ready.`;
-  renderMediaPreview();
-});
-
 function renderTemplatePreview() {
   const template = templateInput.value;
   renderTags(template);
-  renderMediaPreview();
 
   if (!template) {
     previewOutput.textContent = '';
@@ -448,22 +304,15 @@ function renderTemplatePreview() {
 }
 
 templateInput.addEventListener('input', renderTemplatePreview);
-mediaUrlInput.addEventListener('input', renderMediaPreview);
-mediaTypeInput.addEventListener('change', renderMediaPreview);
 
 // --- Safety guardrail config ------------------------------------------------
 
 function readConfig() {
-  const useUploadedMedia = activeMediaTab === 'upload' && hasUploadedMedia;
   return {
     minDelaySeconds: Number(minDelayInput.value) || 15,
     maxDelaySeconds: Number(maxDelayInput.value) || 45,
     hourlyBatchCap: Number(batchCapInput.value) || 300,
     jitterPercent: Number(jitterInput.value) || 20,
-    mediaUrl: activeMediaTab === 'link' ? mediaUrlInput.value.trim() || null : null,
-    mediaType: activeMediaTab === 'upload' ? uploadedMediaType || 'auto' : mediaTypeInput.value,
-    useUploadedMedia,
-    sendAsDocument: sendAsDocumentInput.checked,
   };
 }
 
@@ -588,7 +437,6 @@ btnSendTest.addEventListener('click', async () => {
 
   const sampleRecord = recipients[0] || {};
   const messagePayload = compileTemplate(templateInput.value, sampleRecord);
-  const config = readConfig();
 
   btnSendTest.disabled = true;
   testSendStatusEl.textContent = 'Sending test message...';
@@ -596,14 +444,7 @@ btnSendTest.addEventListener('click', async () => {
 
   const result = await chrome.runtime.sendMessage({
     type: 'SEND_TEST',
-    payload: {
-      phone,
-      messagePayload,
-      mediaUrl: config.mediaUrl,
-      mediaType: config.mediaType,
-      useUploadedMedia: config.useUploadedMedia,
-      sendAsDocument: config.sendAsDocument,
-    },
+    payload: { phone, messagePayload },
   });
 
   btnSendTest.disabled = false;
