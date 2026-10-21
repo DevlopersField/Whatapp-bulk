@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Enterprise Outreach Engine",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Modular, rate-limited browser automation engine for web messaging platforms.",
   "icons": {
     "16": "assets/icon-16.png",
@@ -11,6 +11,7 @@
   "permissions": [
     "sidePanel",
     "storage",
+    "unlimitedStorage",
     "activeTab",
     "scripting",
     "alarms",

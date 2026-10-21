@@ -43,10 +43,22 @@ export class WhatsAppAdapter extends MessagingAdapter {
         'xpath://footer//div[@contenteditable="true"]',
       ],
       sendButton: [
-        'button span[data-icon="send"]',
-        'button[aria-label="Send"]',
+        'div[data-testid="send"]',
         'span[data-icon="send"]',
+        'span[data-icon="wds-ic-send"]',
+        'span[data-icon="send-light"]',
+        'span[data-icon="send-inverted"]',
+        'button span[data-icon="send"]',
+        'button span[data-icon="wds-ic-send"]',
+        'button[aria-label="Send"]',
+        'div[role="button"][aria-label="Send"]',
+        'div[aria-label="Send"]',
+        'div[role="button"] span[data-icon="send"]',
+        'div[role="button"] span[data-icon="wds-ic-send"]',
+        'xpath://span[@data-icon="send" or @data-icon="wds-ic-send" or @data-icon="send-light"]/ancestor::div[@role="button"]',
+        'xpath://span[@data-icon="send" or @data-icon="wds-ic-send" or @data-icon="send-light"]/ancestor::button',
         'xpath://button[contains(@aria-label, "Send")]',
+        'xpath://div[@role="button" and contains(@aria-label, "Send")]',
       ],
       conversationDropZone: [
         '#main',
@@ -76,27 +88,42 @@ export class WhatsAppAdapter extends MessagingAdapter {
         'xpath://div[@aria-label="Add a caption"]',
       ],
       attachButton: [
-        'span[data-icon="plus-rounded"]',
-        'span[data-icon="clip"]',
-        'div[title="Attach"]',
+        'footer button[title="Attach"]',
+        'footer button[aria-label="Attach"]',
+        'footer div[title="Attach"]',
+        'footer div[aria-label="Attach"]',
+        'footer span[data-icon="plus"]',
+        'footer span[data-icon="plus-rounded"]',
+        'footer span[data-icon="attach-menu-plus"]',
+        'footer span[data-icon="clip"]',
+        '#main footer button[title="Attach"]',
         'button[title="Attach"]',
+        'div[title="Attach"]',
+        'button[aria-label="Attach"]',
         'div[aria-label="Attach"]',
+        'span[data-icon="plus"]',
+        'span[data-icon="plus-rounded"]',
+        'span[data-icon="attach-menu-plus"]',
+        'span[data-icon="clip"]',
       ],
       documentMenuItem: [
         'li[data-testid="mi-attach-document"]',
+        'button[aria-label="Document"]',
         'div[aria-label="Document"]',
         'span[data-icon="document"]',
+        'span[data-icon="attach-document"]',
         'xpath://div[contains(text(), "Document")]',
         'xpath://li[contains(., "Document")]',
+        'xpath://span[contains(@data-icon, "document")]/ancestor::button',
+        'xpath://span[contains(@data-icon, "document")]/ancestor::li',
       ],
       // WhatsApp Web keeps a distinct hidden <input> per attach type — the
-      // document one takes any file type, unlike the image/video one. NOT
-      // falling back to a bare 'input[type="file"]' here on purpose: that
-      // would risk silently grabbing the image/video input instead and
-      // sending through the compressed path without telling anyone.
+      // document one takes any file type, unlike the image/video one.
       documentFileInput: [
+        'li[data-testid="mi-attach-document"] input[type="file"]',
         'input[type="file"][accept="*"]',
-        'input[type="file"]:not([accept*="image"])',
+        'input[type="file"][accept*="pdf"]',
+        'input[type="file"]:not([accept*="image"]):not([accept*="video"])',
       ],
     };
   }
@@ -199,51 +226,163 @@ export class WhatsAppAdapter extends MessagingAdapter {
   async sendAsDocument(file, captionText) {
     await this._attachAsDocument(file);
 
-    const { node: captionNode } = await DOMSelectorEngine.resolveElement(
-      this.SELECTORS.mediaCaptionInput,
-      8000
-    );
-    if (captionText) {
-      await this._typeIntoField(captionNode, captionText);
+    // Wait for the document preview modal (caption input or modal send button)
+    let captionNode = null;
+    let typedCaption = false;
+    try {
+      const res = await DOMSelectorEngine.resolveElement(
+        this.SELECTORS.mediaCaptionInput,
+        3500
+      );
+      captionNode = res.node;
+    } catch (e) {
+      // Caption input optional on some WhatsApp document previews
     }
 
-    await this._clickSendButton(this.SELECTORS.sendButton, 8000);
+    if (captionText && captionNode) {
+      await this._typeIntoField(captionNode, captionText);
+      typedCaption = true;
+      await new Promise((res) => setTimeout(res, 200));
+    }
+
+    await this._clickSendButton(this.SELECTORS.sendButton, 10000);
+    await new Promise((res) => setTimeout(res, 1200));
+
+    // If message text was not typed into the modal caption, deliver it as follow-up
+    if (captionText && !typedCaption) {
+      try {
+        await this.injectPayload(captionText);
+        await this.triggerSend();
+      } catch (e) {
+        console.warn('[Outreach] Follow-up text send after document failed:', e);
+      }
+    }
   }
 
   async _attachAsDocument(file) {
     const dataTransfer = new DataTransfer();
     dataTransfer.items.add(file);
 
-    try {
-      const { node: input } = await DOMSelectorEngine.resolveElement(
-        this.SELECTORS.documentFileInput,
-        1500
-      );
-      input.files = dataTransfer.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      return;
-    } catch (e) {
-      // Fall through to the menu-driven path below.
+    const setInputFiles = (inputElem) => {
+      try {
+        const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files');
+        if (descriptor && descriptor.set) {
+          descriptor.set.call(inputElem, dataTransfer.files);
+        } else {
+          inputElem.files = dataTransfer.files;
+        }
+      } catch (e) {
+        inputElem.files = dataTransfer.files;
+      }
+      inputElem.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      inputElem.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    };
+
+    const isModalOpen = () => Boolean(document.querySelector(
+      'div[aria-label="Add a caption"], ' +
+      'div[aria-placeholder="Add a caption"], ' +
+      'div[data-testid="media-caption-input-container"], ' +
+      'div[data-testid="send"], ' +
+      'span[data-icon="send"], ' +
+      'span[data-icon="wds-ic-send"], ' +
+      'span[data-icon="send-light"], ' +
+      'div[role="button"][aria-label="Send"]'
+    ));
+
+    // Filter helper: find a file input that does NOT restrict to images/videos
+    const findDocInput = () => {
+      const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      return inputs.find((input) => {
+        const accept = (input.getAttribute('accept') || '').toLowerCase();
+        return accept === '*' || accept === '*/*' || (accept && !accept.includes('image') && !accept.includes('video')) || !accept;
+      });
+    };
+
+    // 1. Check if a non-image file input is already in the DOM
+    let docInput = findDocInput();
+    if (docInput) {
+      setInputFiles(docInput);
+      await new Promise((res) => setTimeout(res, 800));
+      if (isModalOpen()) return;
     }
 
-    const { node: attachBtn } = await DOMSelectorEngine.resolveElement(
-      this.SELECTORS.attachButton,
-      5000
-    );
-    attachBtn.click();
+    // 2. Open Attach menu to reveal Document menu item & input
+    try {
+      const { node: attachIcon } = await DOMSelectorEngine.resolveElement(
+        this.SELECTORS.attachButton,
+        3500
+      );
+      const attachClickable = attachIcon.closest('button') || attachIcon.closest('div[role="button"]') || attachIcon;
 
-    const { node: documentItem } = await DOMSelectorEngine.resolveElement(
-      this.SELECTORS.documentMenuItem,
-      4000
-    );
-    documentItem.click();
+      // Dispatch full mouse click sequence on the button element
+      const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+      for (const ev of events) {
+        attachClickable.dispatchEvent(new MouseEvent(ev, { bubbles: true, cancelable: true, view: window }));
+      }
+      if (typeof attachClickable.click === 'function') {
+        attachClickable.click();
+      }
+      await new Promise((res) => setTimeout(res, 400));
 
-    const { node: input } = await DOMSelectorEngine.resolveElement(
-      this.SELECTORS.documentFileInput,
-      4000
-    );
-    input.files = dataTransfer.files;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+      // Check again for document file input revealed by open menu
+      docInput = findDocInput();
+      if (docInput) {
+        setInputFiles(docInput);
+        await new Promise((res) => setTimeout(res, 800));
+        if (isModalOpen()) return;
+      }
+
+      // Try finding input inside document menu item
+      const docItem = document.querySelector(
+        'li[data-testid="mi-attach-document"], ' +
+        'span[data-icon="document"], ' +
+        'span[data-icon="attach-document"]'
+      )?.closest('li') || document.querySelector('span[data-icon="document"], span[data-icon="attach-document"]')?.closest('button');
+
+      if (docItem) {
+        const itemInput = docItem.querySelector('input[type="file"]') || docItem.parentElement?.querySelector('input[type="file"]');
+        if (itemInput) {
+          setInputFiles(itemInput);
+          await new Promise((res) => setTimeout(res, 800));
+          if (isModalOpen()) return;
+        }
+      }
+    } catch (e) {
+      // Menu interaction failed, proceed to direct drop
+    }
+
+    // 3. Fallback: simulate native HTML5 drag-and-drop onto chat area & composer
+    await this._simulateFileDrop(file);
+    await new Promise((res) => setTimeout(res, 1200));
+  }
+
+  async _simulateFileDrop(file) {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+
+    const targets = [
+      document.querySelector('#main footer div[contenteditable="true"]'),
+      document.querySelector('div[contenteditable="true"][data-tab="10"]'),
+      document.querySelector('#main'),
+      document.querySelector('div[data-testid="conversation-panel-wrapper"]'),
+      document.body,
+    ].filter(Boolean);
+
+    for (const target of targets) {
+      for (const eventName of ['dragenter', 'dragover', 'drop']) {
+        const event = new DragEvent(eventName, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer,
+        });
+        target.dispatchEvent(event);
+      }
+      await new Promise((res) => setTimeout(res, 100));
+      if (document.querySelector('div[aria-label="Add a caption"], div[data-testid="send"], span[data-icon="send"], span[data-icon="wds-ic-send"], span[data-icon="send-light"]')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async _dropFileIntoComposer(file) {
@@ -257,27 +396,13 @@ export class WhatsAppAdapter extends MessagingAdapter {
       );
       input.files = dataTransfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((res) => setTimeout(res, 800));
       return;
     } catch (e) {
-      // No matching hidden input found in time — fall back to simulating
-      // an actual OS-style drag-and-drop onto the conversation panel.
+      // Fall through to drag-drop simulation
     }
 
-    const { node: dropTarget } = await DOMSelectorEngine.resolveElement(
-      this.SELECTORS.conversationDropZone,
-      8000
-    );
-
-    const dragEventSequence = ['dragenter', 'dragover', 'drop'];
-    for (const eventName of dragEventSequence) {
-      const event = new DragEvent(eventName, {
-        bubbles: true,
-        cancelable: true,
-        dataTransfer,
-      });
-      dropTarget.dispatchEvent(event);
-      await new Promise((res) => setTimeout(res, 120));
-    }
+    await this._simulateFileDrop(file);
   }
 
   /**
@@ -309,7 +434,7 @@ export class WhatsAppAdapter extends MessagingAdapter {
 
   async _clickSendButton(selectors, timeoutMs) {
     const { node: sendIcon } = await DOMSelectorEngine.resolveElement(selectors, timeoutMs);
-    const targetButton = sendIcon.closest('button') || sendIcon;
+    const targetButton = sendIcon.closest('button') || sendIcon.closest('div[role="button"]') || sendIcon.parentElement || sendIcon;
 
     // Full Pointer and Mouse event simulation loop
     const eventSequence = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
@@ -321,7 +446,14 @@ export class WhatsAppAdapter extends MessagingAdapter {
           view: window,
         })
       );
-      await new Promise((res) => setTimeout(res, 50));
+      await new Promise((res) => setTimeout(res, 40));
+    }
+
+    // Call native .click() to ensure element activation
+    if (typeof targetButton.click === 'function') {
+      try {
+        targetButton.click();
+      } catch (e) {}
     }
   }
 }

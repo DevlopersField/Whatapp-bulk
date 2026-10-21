@@ -29,10 +29,10 @@ Click the pinned icon → side panel opens on the right.
 
 ## Test it
 1. Open `web.whatsapp.com`, scan QR, log in.
-2. In side panel: paste CSV (`phone,name` header) **or** upload a CSV **or** use "Add Single Phone Number" for one-off adds. Max 100 recipients per batch — extra rows get dropped with a warning.
-3. Type message template using `{name}` etc. Select text and hit **B / I / S / { }** to wrap it in WhatsApp's own formatting (`*bold*`, `_italic_`, `~strike~`, ` ```mono``` `), or the 🔗 button to insert a link — the preview below renders it live, and shows even before any recipients are loaded.
-4. (Optional) Attach media — **Upload File** tab picks a local image/video (max 7MB — see size note below); **Paste Link** tab uses a URL instead (up to 100MB, since it's fetched fresh each send rather than stored). Leave both empty for text-only.
-5. (Optional) Check **Send as Document** to skip WhatsApp's own video/photo compression — sends the original file untouched, at the cost of it appearing as a file attachment rather than an inline media preview. Experimental — see note below.
+2. In side panel: paste CSV (`phone,name` header) **or** upload a CSV **or** use "Add Single Phone Number" for one-off adds. Supports **unlimited recipients**.
+3. Use the header buttons to toggle **Light / Dark Theme** or click **Full Tab** to work in a comfortable wide-screen tab alongside your WhatsApp tab.
+4. Type message template using `{name}` etc. Select text and hit **B / I / S / { }** to wrap it in WhatsApp's own formatting (`*bold*`, `_italic_`, `~strike~`, ` ```mono``` `), or the 🔗 button to insert a link — the preview below renders it live.
+5. (Optional) Attach PDF, image, or video — **Upload File** tab picks a local PDF/document/image/video (max 7MB); **Paste Link** tab uses a direct URL instead (up to 100MB). When a PDF is selected, **Send as Document** is automatically enabled to deliver the document directly.
 6. Set delays (defaults are fine).
 7. Click **Start Processing**.
 

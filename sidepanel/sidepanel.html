@@ -9,138 +9,195 @@
 <body>
   <div class="app-container">
     <header class="app-header">
-      <h2>Outreach Control Panel</h2>
+      <div class="header-left">
+        <h2>Outreach Control Panel</h2>
+        <div class="header-controls">
+          <button id="btn-theme-toggle" class="header-action-btn" type="button" title="Toggle Light / Dark theme">
+            <span id="theme-icon">🌙</span> <span id="theme-label">Theme</span>
+          </button>
+          <button id="btn-open-tab" class="header-action-btn" type="button" title="Open extension in full tab">
+            <span>⤢</span> <span>Full Tab</span>
+          </button>
+        </div>
+      </div>
       <div class="header-status">
         <div id="connection-badge" class="badge disconnected">Disconnected</div>
         <button id="btn-recheck-connection" class="link-btn" type="button" title="Re-check WhatsApp session">Recheck</button>
       </div>
     </header>
 
-    <!-- Recipient Data Ingestion Module -->
-    <section class="panel-section">
-      <h3>1. Recipient Ingestion</h3>
-      <div class="form-group">
-        <label for="csv-file-input">Upload CSV Data File</label>
-        <input type="file" id="csv-file-input" accept=".csv">
-      </div>
-      <div class="form-group">
-        <label for="manual-paste-input">Manual CSV Input</label>
-        <textarea id="manual-paste-input" rows="3" placeholder="phone,name,company&#10;15550199,John,Acme Corp"></textarea>
-      </div>
-      <div class="form-group">
-        <label for="quickadd-phone-input">Add Single Phone Number</label>
-        <div class="inline-add-row">
-          <input type="text" id="quickadd-phone-input" placeholder="Phone e.g. 15550199">
-          <input type="text" id="quickadd-name-input" placeholder="Name (optional)">
-          <button id="btn-quickadd" class="btn secondary btn-compact" type="button">Add</button>
-        </div>
-      </div>
-      <div class="data-summary">
-        <div>Parsed Records: <span id="record-count">0</span> / <span id="record-cap">100</span></div>
-        <div>Detected Tags: <span id="detected-tags">None</span></div>
-      </div>
-      <div id="recipient-warning" class="warning-text" hidden></div>
-    </section>
+    <main class="app-main-grid">
+      <div class="app-col-left">
+        <!-- Recipient Data Ingestion Module -->
+        <section class="panel-section">
+          <h3>1. Recipient Ingestion</h3>
+          <div class="form-group">
+            <label for="csv-file-input">Upload CSV Data File</label>
+            <input type="file" id="csv-file-input" accept=".csv">
+          </div>
+          <div class="form-group">
+            <label for="manual-paste-input">Manual CSV Input</label>
+            <textarea id="manual-paste-input" rows="3" placeholder="phone,name,company&#10;15550199,John,Acme Corp"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="quickadd-phone-input">Add Single Phone Number</label>
+            <div class="inline-add-row">
+              <input type="text" id="quickadd-phone-input" placeholder="Phone e.g. 15550199">
+              <input type="text" id="quickadd-name-input" placeholder="Name (optional)">
+              <button id="btn-quickadd" class="btn secondary btn-compact" type="button">Add</button>
+            </div>
+          </div>
+          <div class="data-summary">
+            <div>Parsed Records: <b id="record-count">0</b> <span class="unlimited-pill">Unlimited (∞)</span></div>
+            <div>Detected Tags: <span id="detected-tags">None</span></div>
+          </div>
+          <div id="recipient-warning" class="warning-text" hidden></div>
+        </section>
 
-    <!-- Message Template Composer Module -->
-    <section class="panel-section">
-      <h3>2. Message Composer</h3>
-      <div class="form-group">
-        <label for="template-input">Message Template</label>
-        <div class="format-toolbar">
-          <button type="button" class="fmt-btn" data-marker="*" title="Bold"><b>B</b></button>
-          <button type="button" class="fmt-btn" data-marker="_" title="Italic"><i>I</i></button>
-          <button type="button" class="fmt-btn" data-marker="~" title="Strikethrough"><s>S</s></button>
-          <button type="button" class="fmt-btn" data-marker="```" title="Monospace">{ }</button>
-          <button type="button" class="fmt-btn" id="btn-insert-link" title="Insert Link">🔗</button>
-        </div>
-        <div id="link-insert-row" class="inline-add-row" hidden>
-          <input type="text" id="link-text-input" placeholder="Link text (optional)">
-          <input type="text" id="link-insert-input" placeholder="https://...">
-          <button type="button" id="btn-confirm-link" class="btn secondary btn-compact">Insert</button>
-        </div>
-        <textarea id="template-input" rows="4" placeholder="Hello {name}, hope all is well at {company}..."></textarea>
-      </div>
-      <div class="draft-row">
-        <button id="btn-save-draft" class="btn secondary btn-compact" type="button">Save as Draft</button>
-        <button id="btn-load-draft" class="btn secondary btn-compact" type="button">Load Draft</button>
-        <button id="btn-clear-draft" class="btn secondary btn-compact" type="button">Clear Draft</button>
-        <span id="draft-status" class="draft-status"></span>
-      </div>
-      <div id="dynamic-chip-container" class="chip-container"></div>
+        <!-- Message Template Composer Module -->
+        <section class="panel-section">
+          <h3>2. Message Composer</h3>
+          <div class="form-group">
+            <label for="template-input">Message Template</label>
+            <div class="format-toolbar">
+              <button type="button" class="fmt-btn" data-marker="*" title="Bold"><b>B</b></button>
+              <button type="button" class="fmt-btn" data-marker="_" title="Italic"><i>I</i></button>
+              <button type="button" class="fmt-btn" data-marker="~" title="Strikethrough"><s>S</s></button>
+              <button type="button" class="fmt-btn" data-marker="```" title="Monospace">{ }</button>
+              <button type="button" class="fmt-btn" id="btn-insert-link" title="Insert Link">🔗</button>
+            </div>
+            <div id="link-insert-row" class="inline-add-row" hidden>
+              <input type="text" id="link-text-input" placeholder="Link text (optional)">
+              <input type="text" id="link-insert-input" placeholder="https://...">
+              <button type="button" id="btn-confirm-link" class="btn secondary btn-compact">Insert</button>
+            </div>
+            <textarea id="template-input" rows="4" placeholder="Hello {name}, hope all is well at {company}..."></textarea>
+          </div>
+          <div class="draft-row">
+            <button id="btn-save-draft" class="btn secondary btn-compact" type="button">Save as Draft</button>
+            <button id="btn-load-draft" class="btn secondary btn-compact" type="button">Load Draft</button>
+            <button id="btn-clear-draft" class="btn secondary btn-compact" type="button">Clear Draft</button>
+            <span id="draft-status" class="draft-status"></span>
+          </div>
+          <div id="dynamic-chip-container" class="chip-container"></div>
 
-      <div class="preview-box">
-        <label>Preview (Record #1):</label>
-        <div id="template-preview-output" class="preview-content"></div>
-        <div class="share-link-row">
-          <button id="btn-copy-share-link" class="btn secondary btn-compact" type="button">Copy Shareable Link</button>
-          <span id="share-link-status" class="share-link-status"></span>
-        </div>
-      </div>
-      <div class="form-group test-send-row">
-        <label for="test-phone-input">Send Test To</label>
-        <div class="inline-add-row inline-add-row-2">
-          <input type="text" id="test-phone-input" placeholder="Your phone e.g. 15550199">
-          <button id="btn-send-test" class="btn secondary btn-compact" type="button">Send Test</button>
-        </div>
-        <div id="test-send-status" class="test-send-status"></div>
-      </div>
-    </section>
+          <!-- Attach PDF, Media & Documents (Hidden) -->
+          <div class="form-group media-section" hidden>
+            <label>Attach PDF, Image, or Video (optional)</label>
+            <div class="media-tabs">
+              <button type="button" class="media-tab active" data-tab="upload">Upload File (PDF / Image / Video)</button>
+              <button type="button" class="media-tab" data-tab="link">Paste Link</button>
+            </div>
 
-    <!-- Automation Configuration Guardrails -->
-    <section class="panel-section">
-      <h3>3. Safety Guardrails</h3>
-      <div class="grid-2col">
-        <div class="form-group">
-          <label for="min-delay-input">Min Delay (s)</label>
-          <input type="number" id="min-delay-input" value="15" min="5">
-        </div>
-        <div class="form-group">
-          <label for="max-delay-input">Max Delay (s)</label>
-          <input type="number" id="max-delay-input" value="45" min="10">
-        </div>
-      </div>
-      <div class="grid-2col">
-        <div class="form-group">
-          <label for="batch-cap-input">Hourly Batch Cap</label>
-          <input type="number" id="batch-cap-input" value="300" min="1">
-        </div>
-        <div class="form-group">
-          <label for="jitter-input">Delay Variance (%)</label>
-          <input type="number" id="jitter-input" value="20" min="0" max="100">
-        </div>
-      </div>
-    </section>
+            <div id="media-tab-upload" class="media-tab-panel">
+              <input type="file" id="media-file-input" accept="application/pdf,image/*,video/*,.pdf,.doc,.docx,.xlsx,.txt">
+              <div id="upload-file-name" class="upload-name" hidden></div>
+            </div>
 
-    <!-- Real-Time Queue Operations Monitor -->
-    <section class="panel-section">
-      <h3>4. Queue Operations</h3>
-      <div class="button-group">
-        <button id="btn-start-queue" class="btn primary">Start Processing</button>
-        <button id="btn-pause-queue" class="btn secondary" disabled>Pause</button>
-        <button id="btn-clear-queue" class="btn danger">Clear Queue</button>
-      </div>
-      <div class="progress-container">
-        <div id="progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
-      </div>
-      <div class="queue-status-summary">
-        <span class="status-tag pending">Pending: <b id="cnt-pending">0</b></span>
-        <span class="status-tag sending">Active: <b id="cnt-active">0</b></span>
-        <span class="status-tag sent">Sent: <b id="cnt-sent">0</b></span>
-        <span class="status-tag failed">Failed: <b id="cnt-failed">0</b></span>
-      </div>
-      <div id="queue-log-list" class="log-list"></div>
-    </section>
+            <div id="media-tab-link" class="media-tab-panel" hidden>
+              <div class="grid-2col">
+                <div class="form-group">
+                  <label for="media-url-input">File / Media URL</label>
+                  <input type="text" id="media-url-input" placeholder="https://example.com/invoice.pdf">
+                </div>
+                <div class="form-group">
+                  <label for="media-type-input">Attachment Type</label>
+                  <select id="media-type-input">
+                    <option value="auto">Auto-detect</option>
+                    <option value="pdf">PDF Document</option>
+                    <option value="image">Image</option>
+                    <option value="video">Video</option>
+                    <option value="document">Other Document</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
-    <!-- Local Send History (last 5 days, browser-only) -->
-    <section class="panel-section">
-      <h3>5. History (Last 5 Days)</h3>
-      <div class="history-toolbar">
-        <span id="history-count" class="history-count">0 sent</span>
-        <button id="btn-clear-history" class="btn secondary btn-compact" type="button">Clear History</button>
+            <label class="checkbox-row">
+              <input type="checkbox" id="send-as-document-input">
+              <span>Send as Document (Auto for PDFs; preserves original files without compression)</span>
+            </label>
+          </div>
+
+          <div class="preview-box">
+            <label>Preview (Record #1):</label>
+            <div id="template-preview-output" class="preview-content"></div>
+            <img id="media-preview-thumb" class="media-preview-thumb" hidden alt="Media preview">
+            <div id="media-preview-video-tag" class="media-preview-tag" hidden>🎬 Video attached</div>
+            <div id="media-preview-doc-tag" class="media-preview-tag" hidden>📄 Document / PDF: <b id="media-preview-doc-name"></b></div>
+            <div class="share-link-row">
+              <button id="btn-copy-share-link" class="btn secondary btn-compact" type="button">Copy Shareable Link</button>
+              <span id="share-link-status" class="share-link-status"></span>
+            </div>
+          </div>
+          <div class="form-group test-send-row">
+            <label for="test-phone-input">Send Test To</label>
+            <div class="inline-add-row inline-add-row-2">
+              <input type="text" id="test-phone-input" placeholder="Your phone e.g. 15550199">
+              <button id="btn-send-test" class="btn secondary btn-compact" type="button">Send Test</button>
+            </div>
+            <div id="test-send-status" class="test-send-status"></div>
+          </div>
+        </section>
       </div>
-      <div id="history-list" class="history-list"></div>
-    </section>
+
+      <div class="app-col-right">
+        <!-- Automation Configuration Guardrails -->
+        <section class="panel-section">
+          <h3>3. Safety Guardrails</h3>
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="min-delay-input">Min Delay (s)</label>
+              <input type="number" id="min-delay-input" value="15" min="5">
+            </div>
+            <div class="form-group">
+              <label for="max-delay-input">Max Delay (s)</label>
+              <input type="number" id="max-delay-input" value="45" min="10">
+            </div>
+          </div>
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="batch-cap-input">Hourly Batch Cap</label>
+              <input type="number" id="batch-cap-input" value="300" min="1">
+            </div>
+            <div class="form-group">
+              <label for="jitter-input">Delay Variance (%)</label>
+              <input type="number" id="jitter-input" value="20" min="0" max="100">
+            </div>
+          </div>
+        </section>
+
+        <!-- Real-Time Queue Operations Monitor -->
+        <section class="panel-section">
+          <h3>4. Queue Operations</h3>
+          <div class="button-group">
+            <button id="btn-start-queue" class="btn primary">Start Processing</button>
+            <button id="btn-pause-queue" class="btn secondary" disabled>Pause</button>
+            <button id="btn-clear-queue" class="btn danger">Clear Queue</button>
+          </div>
+          <div class="progress-container">
+            <div id="progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="queue-status-summary">
+            <span class="status-tag pending">Pending: <b id="cnt-pending">0</b></span>
+            <span class="status-tag sending">Active: <b id="cnt-active">0</b></span>
+            <span class="status-tag sent">Sent: <b id="cnt-sent">0</b></span>
+            <span class="status-tag failed">Failed: <b id="cnt-failed">0</b></span>
+          </div>
+          <div id="queue-log-list" class="log-list"></div>
+        </section>
+
+        <!-- Local Send History (last 5 days, browser-only) -->
+        <section class="panel-section">
+          <h3>5. History (Last 5 Days)</h3>
+          <div class="history-toolbar">
+            <span id="history-count" class="history-count">0 sent</span>
+            <button id="btn-clear-history" class="btn secondary btn-compact" type="button">Clear History</button>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </div>
+    </main>
   </div>
   <script type="module" src="sidepanel.js"></script>
 </body>

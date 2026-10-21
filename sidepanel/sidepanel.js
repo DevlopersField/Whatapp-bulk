@@ -3,10 +3,15 @@ import { extractTags, compileTemplate } from '../core/template-engine.js';
 import { QueueManager } from '../core/queue-manager.js';
 
 const queueManager = new QueueManager();
-const MAX_RECIPIENTS = 100;
 const DRAFT_KEY = 'outreach_draft_data';
+const MAX_UPLOAD_BYTES = 7 * 1024 * 1024; // 7MB raw limit for session storage
 
 // --- DOM references -------------------------------------------------------
+
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const themeIconEl = document.getElementById('theme-icon');
+const themeLabelEl = document.getElementById('theme-label');
+const btnOpenTab = document.getElementById('btn-open-tab');
 
 const csvFileInput = document.getElementById('csv-file-input');
 const manualPasteInput = document.getElementById('manual-paste-input');
@@ -25,12 +30,27 @@ const draftStatusEl = document.getElementById('draft-status');
 const chipContainer = document.getElementById('dynamic-chip-container');
 const previewOutput = document.getElementById('template-preview-output');
 
+// Media / Attachment references
+const mediaUrlInput = document.getElementById('media-url-input');
+const mediaTypeInput = document.getElementById('media-type-input');
+const mediaPreviewThumb = document.getElementById('media-preview-thumb');
+const mediaPreviewVideoTag = document.getElementById('media-preview-video-tag');
+const mediaPreviewDocTag = document.getElementById('media-preview-doc-tag');
+const mediaPreviewDocName = document.getElementById('media-preview-doc-name');
+const mediaFileInput = document.getElementById('media-file-input');
+const sendAsDocumentInput = document.getElementById('send-as-document-input');
+const uploadFileNameEl = document.getElementById('upload-file-name');
+const mediaTabButtons = document.querySelectorAll('.media-tab');
+const mediaTabPanels = {
+  upload: document.getElementById('media-tab-upload'),
+  link: document.getElementById('media-tab-link'),
+};
+
 const testPhoneInput = document.getElementById('test-phone-input');
 const btnSendTest = document.getElementById('btn-send-test');
 const testSendStatusEl = document.getElementById('test-send-status');
 const btnRecheckConnection = document.getElementById('btn-recheck-connection');
-// [data-marker] excludes the link button — it shares .fmt-btn for styling
-// but has its own click handler (see btnInsertLink below), not a wrap marker.
+
 const fmtButtons = document.querySelectorAll('.fmt-btn[data-marker]');
 const btnInsertLink = document.getElementById('btn-insert-link');
 const linkInsertRow = document.getElementById('link-insert-row');
@@ -64,8 +84,74 @@ const btnClearHistory = document.getElementById('btn-clear-history');
 // --- Local state ------------------------------------------------------------
 
 let recipients = [];
+let activeMediaTab = 'upload';
+let hasUploadedMedia = false;
+let uploadedMediaType = 'image';
+let uploadedFileName = '';
+let uploadedObjectUrl = null;
 
-// --- Recipient ingestion ----------------------------------------------------
+// --- Theme Management -------------------------------------------------------
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  if (theme === 'dark') {
+    if (themeIconEl) themeIconEl.textContent = '☀️';
+    if (themeLabelEl) themeLabelEl.textContent = 'Light';
+  } else {
+    if (themeIconEl) themeIconEl.textContent = '🌙';
+    if (themeLabelEl) themeLabelEl.textContent = 'Dark';
+  }
+}
+
+async function initTheme() {
+  try {
+    const { ui_theme } = await chrome.storage.local.get('ui_theme');
+    const preferred = ui_theme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyTheme(preferred);
+  } catch (e) {
+    applyTheme('light');
+  }
+}
+
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener('click', async () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try {
+      await chrome.storage.local.set({ ui_theme: next });
+    } catch (e) {}
+  });
+}
+initTheme();
+
+// --- Open Full Tab Mode -----------------------------------------------------
+
+if (btnOpenTab) {
+  if (chrome.tabs && chrome.tabs.getCurrent) {
+    chrome.tabs.getCurrent((currentTab) => {
+      if (currentTab) {
+        // Already running as a full tab — hide button in full tab mode
+        btnOpenTab.hidden = true;
+      } else {
+        // Running inside Chrome Side Panel — click opens tab and closes side panel
+        btnOpenTab.addEventListener('click', () => {
+          chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/sidepanel.html') }, () => {
+            window.close();
+          });
+        });
+      }
+    });
+  } else {
+    btnOpenTab.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/sidepanel.html') }, () => {
+        window.close();
+      });
+    });
+  }
+}
+
+// --- Recipient ingestion (Unlimited) ----------------------------------------
 
 function showRecipientWarning(message) {
   if (!message) {
@@ -78,14 +164,8 @@ function showRecipientWarning(message) {
 }
 
 function applyRecipientCap(list) {
-  if (list.length > MAX_RECIPIENTS) {
-    showRecipientWarning(
-      `Only the first ${MAX_RECIPIENTS} recipients are kept (bulk cap). ${list.length - MAX_RECIPIENTS} dropped.`
-    );
-    return list.slice(0, MAX_RECIPIENTS);
-  }
   showRecipientWarning('');
-  return list;
+  return list; // Unlimited recipients supported
 }
 
 function setRecipients(list) {
@@ -123,7 +203,7 @@ btnQuickAdd.addEventListener('click', () => {
   quickAddNameInput.value = '';
 });
 
-// --- Template composer --------------------------------------------------
+// --- Template composer ------------------------------------------------------
 
 function renderTags(template) {
   const tags = extractTags(template);
@@ -136,8 +216,6 @@ function renderTags(template) {
     chipContainer.appendChild(chip);
   });
 }
-
-// --- Formatting toolbar (WhatsApp's own markdown, not HTML) ----------------
 
 function wrapSelection(marker) {
   const start = templateInput.selectionStart;
@@ -166,8 +244,6 @@ function renderWhatsAppMarkdown(text) {
     .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
     .replace(/_([^_\n]+)_/g, '<em>$1</em>')
     .replace(/~([^~\n]+)~/g, '<s>$1</s>')
-    // WhatsApp auto-detects raw URLs and turns them into a live link
-    // preview card on its own — this just mirrors that in our preview.
     .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 
@@ -183,10 +259,6 @@ function insertAtCursor(text) {
   renderTemplatePreview();
 }
 
-// Deliberately not using window.prompt() here — blocking native dialogs are
-// unreliable inside extension surfaces (popups auto-dismiss them on blur,
-// and side panels have had the same class of issues). An inline row that
-// lives in the page itself always works.
 let savedLinkCursorPos = null;
 
 btnInsertLink.addEventListener('click', () => {
@@ -224,7 +296,7 @@ function handleLinkRowKeydown(event) {
 linkInsertInput.addEventListener('keydown', handleLinkRowKeydown);
 linkTextInput.addEventListener('keydown', handleLinkRowKeydown);
 
-// --- Share as link (wa.me click-to-chat, no automation involved) -----------
+// --- Share as link (wa.me click-to-chat) -----------------------------------
 
 function buildShareLink(messageText) {
   const phone = testPhoneInput.value.replace(/[^\d]/g, '');
@@ -253,7 +325,149 @@ btnCopyShareLink.addEventListener('click', async () => {
   }, 4000);
 });
 
-// --- Draft (message template) --------------------------------------------
+// --- Media & PDF Attachment Logic ------------------------------------------
+
+function resolveLinkMediaType() {
+  const explicit = mediaTypeInput.value;
+  if (explicit !== 'auto') return explicit;
+  const url = mediaUrlInput.value.trim().toLowerCase();
+  if (/\.pdf(\?|$)/.test(url)) return 'pdf';
+  if (/\.(mp4|mov|webm|m4v)(\?|$)/.test(url)) return 'video';
+  if (/\.(docx?|xlsx?|pptx?|txt|zip)(\?|$)/.test(url)) return 'document';
+  return 'image';
+}
+
+function showPreview(kind, srcOrName) {
+  mediaPreviewThumb.hidden = true;
+  mediaPreviewVideoTag.hidden = true;
+  mediaPreviewDocTag.hidden = true;
+
+  if (kind === 'video') {
+    mediaPreviewVideoTag.hidden = false;
+  } else if (kind === 'pdf' || kind === 'document') {
+    mediaPreviewDocTag.hidden = false;
+    mediaPreviewDocName.textContent = srcOrName || (kind === 'pdf' ? 'PDF Document' : 'Document');
+  } else if (kind === 'image') {
+    mediaPreviewThumb.hidden = false;
+    mediaPreviewThumb.src = srcOrName || '';
+  }
+}
+
+function renderMediaPreview() {
+  if (activeMediaTab === 'upload') {
+    if (!hasUploadedMedia) {
+      showPreview(null);
+      return;
+    }
+    showPreview(uploadedMediaType, uploadedMediaType === 'image' ? uploadedObjectUrl : uploadedFileName);
+    return;
+  }
+
+  const url = mediaUrlInput.value.trim();
+  if (!url) {
+    showPreview(null);
+    return;
+  }
+  const detectedType = resolveLinkMediaType();
+  if (detectedType === 'pdf' || detectedType === 'document') {
+    sendAsDocumentInput.checked = true;
+  }
+  showPreview(detectedType, detectedType === 'image' ? url : (url.substring(url.lastIndexOf('/') + 1) || url));
+}
+
+mediaPreviewThumb.addEventListener('error', () => {
+  mediaPreviewThumb.hidden = true;
+});
+
+function setActiveMediaTab(tab) {
+  activeMediaTab = tab;
+  mediaTabButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  mediaTabPanels.upload.hidden = tab !== 'upload';
+  mediaTabPanels.link.hidden = tab !== 'link';
+  renderMediaPreview();
+}
+
+mediaTabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => setActiveMediaTab(btn.dataset.tab));
+});
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+mediaFileInput.addEventListener('change', async () => {
+  const file = mediaFileInput.files?.[0];
+  if (!file) return;
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    uploadFileNameEl.hidden = false;
+    uploadFileNameEl.textContent = `Too large (${Math.round(file.size / 1024 / 1024)}MB) — max local upload is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB (use Paste Link for larger files).`;
+    mediaFileInput.value = '';
+    hasUploadedMedia = false;
+    renderMediaPreview();
+    return;
+  }
+
+  uploadFileNameEl.hidden = false;
+  uploadFileNameEl.textContent = 'Processing file...';
+
+  let mediaType = 'image';
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    mediaType = 'pdf';
+    sendAsDocumentInput.checked = true;
+  } else if (file.type.startsWith('video/')) {
+    mediaType = 'video';
+  } else if (!file.type.startsWith('image/')) {
+    mediaType = 'document';
+    sendAsDocumentInput.checked = true;
+  }
+
+  const buffer = await file.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'STORE_UPLOADED_MEDIA',
+    payload: {
+      base64,
+      mimeType: file.type || (mediaType === 'pdf' ? 'application/pdf' : 'application/octet-stream'),
+      mediaType,
+      fileName: file.name,
+    },
+  });
+
+  if (!result?.success) {
+    uploadFileNameEl.textContent = `Upload failed: ${result?.error || 'unknown error'}`;
+    hasUploadedMedia = false;
+    renderMediaPreview();
+    return;
+  }
+
+  if (uploadedObjectUrl) URL.revokeObjectURL(uploadedObjectUrl);
+  uploadedObjectUrl = URL.createObjectURL(file);
+  uploadedMediaType = mediaType;
+  uploadedFileName = file.name;
+  hasUploadedMedia = true;
+  uploadFileNameEl.textContent = `${file.name} ready.`;
+  renderMediaPreview();
+});
+
+mediaUrlInput.addEventListener('input', renderMediaPreview);
+mediaTypeInput.addEventListener('change', () => {
+  if (mediaTypeInput.value === 'pdf' || mediaTypeInput.value === 'document') {
+    sendAsDocumentInput.checked = true;
+  }
+  renderMediaPreview();
+});
+
+// --- Draft Management -------------------------------------------------------
 
 function flashDraftStatus(text) {
   draftStatusEl.textContent = text;
@@ -265,6 +479,9 @@ function flashDraftStatus(text) {
 btnSaveDraft.addEventListener('click', async () => {
   const draft = {
     template: templateInput.value,
+    mediaUrl: mediaUrlInput.value,
+    mediaType: mediaTypeInput.value,
+    sendAsDocument: sendAsDocumentInput.checked,
     savedAt: Date.now(),
   };
   await chrome.storage.local.set({ [DRAFT_KEY]: draft });
@@ -279,6 +496,14 @@ btnLoadDraft.addEventListener('click', async () => {
     return;
   }
   templateInput.value = draft.template || '';
+  if (draft.mediaUrl) {
+    mediaUrlInput.value = draft.mediaUrl;
+    setActiveMediaTab('link');
+  }
+  if (draft.mediaType) mediaTypeInput.value = draft.mediaType;
+  if (typeof draft.sendAsDocument === 'boolean') {
+    sendAsDocumentInput.checked = draft.sendAsDocument;
+  }
   renderTemplatePreview();
   flashDraftStatus('Draft loaded.');
 });
@@ -291,14 +516,12 @@ btnClearDraft.addEventListener('click', async () => {
 function renderTemplatePreview() {
   const template = templateInput.value;
   renderTags(template);
+  renderMediaPreview();
 
   if (!template) {
     previewOutput.textContent = '';
     return;
   }
-  // Preview against recipient #1 once loaded; before that, still preview
-  // against an empty record so {tags} just show literally instead of the
-  // whole preview going blank while you're still writing the message.
   const compiled = compileTemplate(template, recipients[0] || {});
   previewOutput.innerHTML = renderWhatsAppMarkdown(compiled);
 }
@@ -308,11 +531,16 @@ templateInput.addEventListener('input', renderTemplatePreview);
 // --- Safety guardrail config ------------------------------------------------
 
 function readConfig() {
+  const useUploadedMedia = activeMediaTab === 'upload' && hasUploadedMedia;
   return {
     minDelaySeconds: Number(minDelayInput.value) || 15,
     maxDelaySeconds: Number(maxDelayInput.value) || 45,
     hourlyBatchCap: Number(batchCapInput.value) || 300,
     jitterPercent: Number(jitterInput.value) || 20,
+    mediaUrl: activeMediaTab === 'link' ? mediaUrlInput.value.trim() || null : null,
+    mediaType: activeMediaTab === 'upload' ? uploadedMediaType || 'auto' : mediaTypeInput.value,
+    useUploadedMedia,
+    sendAsDocument: sendAsDocumentInput.checked,
   };
 }
 
@@ -353,90 +581,113 @@ btnClear.addEventListener('click', async () => {
   await queueManager.clearQueue();
   chrome.runtime.sendMessage({ type: 'ENGINE_CLEAR' });
   setControlsRunning(false);
-  resetProgressUI();
+  updateQueueCounts({ pending: 0, processing: 0, sent: 0, failed: 0 });
+  updateProgress(0);
   appendLog('Queue cleared.');
 });
 
-// --- Progress / status rendering -----------------------------------------
+// --- UI Sync ----------------------------------------------------------------
 
-function resetProgressUI() {
-  progressFill.style.width = '0%';
-  cntPending.textContent = '0';
-  cntActive.textContent = '0';
-  cntSent.textContent = '0';
-  cntFailed.textContent = '0';
-  logList.innerHTML = '';
+function updateQueueCounts({ pending = 0, processing = 0, sent = 0, failed = 0 }) {
+  cntPending.textContent = String(pending);
+  cntActive.textContent = String(processing);
+  cntSent.textContent = String(sent);
+  cntFailed.textContent = String(failed);
+}
+
+function updateProgress(percent) {
+  progressFill.style.width = `${Math.min(Math.max(percent, 0), 100)}%`;
 }
 
 function appendLog(message) {
   const entry = document.createElement('div');
   entry.className = 'log-entry';
-  const time = new Date().toLocaleTimeString();
-  entry.innerHTML = `<span>${message}</span><span>${time}</span>`;
-  logList.prepend(entry);
+
+  const textSpan = document.createElement('span');
+  textSpan.textContent = message;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  entry.appendChild(textSpan);
+  entry.appendChild(timeSpan);
+  logList.appendChild(entry);
+  logList.scrollTop = logList.scrollHeight;
 }
 
-function renderSnapshot({ queue, state }) {
-  if (!queue || !state) return;
+function applySnapshot(state) {
+  if (!state) return;
 
-  const pending = queue.filter((t) => t.status === 'PENDING').length;
-  const active = queue.filter((t) => t.status === 'PROCESSING').length;
-  const sent = queue.filter((t) => t.status === 'SENT').length;
-  const failed = queue.filter((t) => t.status === 'FAILED').length;
-
-  cntPending.textContent = String(pending);
-  cntActive.textContent = String(active);
-  cntSent.textContent = String(sent);
-  cntFailed.textContent = String(failed);
-
-  const completed = sent + failed;
+  const completed = (state.successCount || 0) + (state.failureCount || 0);
   const percent = state.totalTasks > 0 ? Math.round((completed / state.totalTasks) * 100) : 0;
-  progressFill.style.width = `${percent}%`;
+  updateProgress(percent);
 
   setControlsRunning(state.status === 'RUNNING');
+
+  if (state.counts) {
+    updateQueueCounts(state.counts);
+  }
 }
 
-const DISCONNECT_REASON_TEXT = {
-  'no-tab': 'No WhatsApp Tab',
-  qr: 'Scan QR Code',
-  'no-content-script': 'Reloading...',
-  error: 'Detection Error',
-  unknown: 'Disconnected',
-};
+// --- Connection status ------------------------------------------------------
 
-function renderConnection(status) {
-  const connected = Boolean(status?.connected);
-  connectionBadge.textContent = connected
-    ? 'Connected'
-    : DISCONNECT_REASON_TEXT[status?.reason] || 'Disconnected';
-  connectionBadge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
+function setConnectionBadge(status) {
+  connectionBadge.className = 'badge';
+  if (status.connected) {
+    connectionBadge.classList.add('connected');
+    connectionBadge.textContent = 'Connected';
+    connectionBadge.title = 'WhatsApp Web is active and ready to send.';
+  } else {
+    connectionBadge.classList.add('disconnected');
+    switch (status.reason) {
+      case 'no_tab':
+        connectionBadge.textContent = 'No WhatsApp Tab';
+        connectionBadge.title = 'Open web.whatsapp.com in a tab.';
+        break;
+      case 'qr':
+        connectionBadge.textContent = 'Scan QR Code';
+        connectionBadge.title = 'WhatsApp Web is open but waiting for phone scan.';
+        break;
+      case 'injecting':
+        connectionBadge.textContent = 'Reloading...';
+        connectionBadge.title = 'Extension is connecting to the tab.';
+        break;
+      default:
+        connectionBadge.textContent = 'Detection Error';
+        connectionBadge.title = 'Could not verify WhatsApp page state.';
+    }
+  }
 }
 
-async function checkConnection() {
+btnRecheckConnection.addEventListener('click', async () => {
+  connectionBadge.className = 'badge';
   connectionBadge.textContent = 'Checking...';
-  const status = await chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' });
-  renderConnection(status);
-}
+  try {
+    const status = await chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' });
+    setConnectionBadge(status || { connected: false, reason: 'unknown' });
+  } catch (e) {
+    setConnectionBadge({ connected: false, reason: 'unknown' });
+  }
+});
 
-btnRecheckConnection.addEventListener('click', checkConnection);
-
-// --- Test send (bypasses the queue entirely) --------------------------
+// --- Test send --------------------------------------------------------------
 
 btnSendTest.addEventListener('click', async () => {
   const phone = testPhoneInput.value.replace(/[^\d]/g, '');
   if (!phone) {
-    testSendStatusEl.textContent = 'Enter a phone number to send the test to.';
+    testSendStatusEl.textContent = 'Enter a test phone number.';
     testSendStatusEl.className = 'test-send-status error';
     return;
   }
   if (!templateInput.value.trim()) {
-    testSendStatusEl.textContent = 'Message template is empty.';
+    testSendStatusEl.textContent = 'Write a message first.';
     testSendStatusEl.className = 'test-send-status error';
     return;
   }
 
   const sampleRecord = recipients[0] || {};
   const messagePayload = compileTemplate(templateInput.value, sampleRecord);
+  const config = readConfig();
 
   btnSendTest.disabled = true;
   testSendStatusEl.textContent = 'Sending test message...';
@@ -444,7 +695,14 @@ btnSendTest.addEventListener('click', async () => {
 
   const result = await chrome.runtime.sendMessage({
     type: 'SEND_TEST',
-    payload: { phone, messagePayload },
+    payload: {
+      phone,
+      messagePayload,
+      mediaUrl: config.mediaUrl,
+      mediaType: config.mediaType,
+      useUploadedMedia: config.useUploadedMedia,
+      sendAsDocument: config.sendAsDocument,
+    },
   });
 
   btnSendTest.disabled = false;
@@ -457,7 +715,7 @@ btnSendTest.addEventListener('click', async () => {
   }
 });
 
-// --- Send history (last 5 days, browser-local, compact-by-default) --------
+// --- Send history (last 5 days, browser-local) -------------------------------
 
 function formatHistoryTime(timestamp) {
   return new Date(timestamp).toLocaleString([], {
@@ -483,8 +741,6 @@ function renderHistory(entries) {
   entries.forEach((entry) => {
     const item = document.createElement('div');
     item.className = 'history-item';
-    // Compact by default — a row summary only. Clicking toggles the full
-    // message/error into view instead of always rendering full text.
     item.addEventListener('click', () => item.classList.toggle('expanded'));
 
     const row = document.createElement('div');
@@ -494,32 +750,19 @@ function renderHistory(entries) {
     who.className = 'history-item-who';
     who.textContent = entry.name ? `${entry.name} (${entry.phone})` : entry.phone;
 
-    const meta = document.createElement('div');
-    meta.className = 'history-item-meta';
-
-    const statusTag = document.createElement('span');
-    statusTag.className = `status-tag ${entry.status === 'SENT' ? 'sent' : 'failed'}`;
-    statusTag.textContent = entry.status === 'SENT' ? 'Sent' : 'Failed';
-
     const time = document.createElement('span');
     time.className = 'history-item-time';
     time.textContent = formatHistoryTime(entry.timestamp);
 
-    meta.append(statusTag, time);
-    row.append(who, meta);
+    row.appendChild(who);
+    row.appendChild(time);
+    item.appendChild(row);
 
     const full = document.createElement('div');
     full.className = 'history-item-full';
-    full.textContent = (entry.hadMedia ? '[Media attached] ' : '') + (entry.message || '');
+    full.textContent = (entry.hadMedia ? '[Attachment] ' : '') + (entry.message || '');
+    item.appendChild(full);
 
-    if (entry.error) {
-      const errorLine = document.createElement('div');
-      errorLine.className = 'history-item-error';
-      errorLine.textContent = entry.error;
-      full.appendChild(errorLine);
-    }
-
-    item.append(row, full);
     historyListEl.appendChild(item);
   });
 }
@@ -534,27 +777,42 @@ btnClearHistory.addEventListener('click', async () => {
   renderHistory([]);
 });
 
-// Listen for status broadcasts pushed from the background service worker.
+// --- Background message listener --------------------------------------------
+
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'QUEUE_SNAPSHOT') {
-    renderSnapshot(message.payload);
-    refreshHistory();
-  } else if (message?.type === 'TASK_LOG') {
-    appendLog(message.payload.message);
-  } else if (message?.type === 'CONNECTION_STATUS') {
-    renderConnection(message.payload);
+  switch (message.type) {
+    case 'QUEUE_SNAPSHOT':
+      applySnapshot(message.payload);
+      break;
+    case 'TASK_LOG':
+      appendLog(message.payload.message);
+      break;
+    case 'CONNECTION_STATUS':
+      setConnectionBadge(message.payload);
+      break;
+    case 'TASK_COMPLETED':
+      refreshHistory();
+      break;
+    default:
+      break;
   }
 });
 
-// Hydrate UI from any existing persisted queue on panel open, and actively
-// re-check the WhatsApp tab's session (rather than waiting for a push that
-// may have fired before this panel was even open to receive it).
-(async function hydrate() {
+// --- Initialization ---------------------------------------------------------
+
+async function initialize() {
   const snapshot = await queueManager.getSnapshot();
-  if (snapshot.state) {
-    renderSnapshot(snapshot);
+  applySnapshot(snapshot);
+  refreshHistory();
+
+  try {
+    const status = await chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' });
+    setConnectionBadge(status || { connected: false, reason: 'unknown' });
+  } catch (e) {
+    setConnectionBadge({ connected: false, reason: 'unknown' });
   }
 
-  await checkConnection();
-  await refreshHistory();
-})();
+  renderTemplatePreview();
+}
+
+initialize();

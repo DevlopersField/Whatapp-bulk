@@ -73,7 +73,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async sendResponse
     case 'FETCH_MEDIA_BLOB':
       fetchMediaBlob(message.payload.mediaUrl)
-        .then(async (blob) => sendResponse({ base64: await blobToBase64(blob), mimeType: blob.type }))
+        .then(async (blob) => {
+          let fileName = null;
+          try {
+            const urlPath = new URL(message.payload.mediaUrl).pathname;
+            fileName = decodeURIComponent(urlPath.substring(urlPath.lastIndexOf('/') + 1));
+          } catch (e) {}
+          sendResponse({
+            base64: await blobToBase64(blob),
+            mimeType: blob.type,
+            fileName: fileName || (blob.type === 'application/pdf' ? 'document.pdf' : null),
+          });
+        })
         .catch((error) => sendResponse({ error: error.message }));
       return true; // async sendResponse
     case 'STORE_UPLOADED_MEDIA':
@@ -83,7 +94,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async sendResponse
     case 'FETCH_UPLOADED_MEDIA':
       fetchUploadedMediaBase64()
-        .then(({ base64, mimeType }) => sendResponse({ base64, mimeType }))
+        .then((data) => sendResponse(data))
         .catch((error) => sendResponse({ error: error.message }));
       return true; // async sendResponse
     case 'TASK_RESULT':
@@ -438,12 +449,12 @@ async function sendExecuteTask(tabId, task) {
  * writing the file to disk. Base64/JSON keeps this bulletproof across any
  * Chrome version, rather than betting on Blob support in storage APIs.
  */
-async function storeUploadedMedia({ base64, mimeType, mediaType }) {
+async function storeUploadedMedia({ base64, mimeType, mediaType, fileName }) {
   const approxBytes = Math.ceil((base64.length * 3) / 4);
   if (approxBytes > MAX_UPLOAD_BYTES) {
     throw new Error(`Media exceeds ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB limit.`);
   }
-  await chrome.storage.session.set({ [UPLOADED_MEDIA_KEY]: { base64, mimeType, mediaType } });
+  await chrome.storage.session.set({ [UPLOADED_MEDIA_KEY]: { base64, mimeType, mediaType, fileName } });
 }
 
 // Already stored as base64 (see storeUploadedMedia) — handed back as-is
@@ -455,7 +466,12 @@ async function fetchUploadedMediaBase64() {
   if (!record) {
     throw new Error('No uploaded media found — re-upload the file.');
   }
-  return { base64: record.base64, mimeType: record.mimeType };
+  return {
+    base64: record.base64,
+    mimeType: record.mimeType,
+    fileName: record.fileName,
+    mediaType: record.mediaType,
+  };
 }
 
 // --- Status broadcast helpers -----------------------------------------

@@ -54,10 +54,22 @@ async function fetchMediaAsFile(request, mediaType) {
   if (response?.error) {
     throw new Error(response.error);
   }
-  const ext = mediaType === 'video' ? 'mp4' : 'jpg';
   const bytes = base64ToBytes(response.base64);
-  const mimeType = response.mimeType || (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
-  return new File([bytes], `attachment.${ext}`, { type: mimeType });
+  const mimeType = response.mimeType || (
+    mediaType === 'video' ? 'video/mp4' :
+    mediaType === 'pdf' || mediaType === 'document' ? 'application/pdf' :
+    'image/jpeg'
+  );
+
+  let ext = 'jpg';
+  if (mimeType.includes('pdf') || mediaType === 'pdf' || mediaType === 'document') ext = 'pdf';
+  else if (mimeType.includes('video') || mediaType === 'video') ext = 'mp4';
+  else if (mimeType.includes('png')) ext = 'png';
+  else if (mimeType.includes('webp')) ext = 'webp';
+
+  const defaultName = `attachment.${ext}`;
+  const fileName = response.fileName || defaultName;
+  return new File([bytes], fileName, { type: mimeType });
 }
 
 async function executeSend(adapter, task) {
@@ -71,8 +83,25 @@ async function executeSend(adapter, task) {
     );
   }
 
-  if (file && task.sendAsDocument) {
-    await adapter.sendAsDocument(file, task.messagePayload);
+  const isDocument = Boolean(
+    task.sendAsDocument ||
+    task.mediaType === 'document' ||
+    task.mediaType === 'pdf' ||
+    (file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')))
+  );
+
+  if (file && isDocument) {
+    try {
+      await adapter.sendAsDocument(file, task.messagePayload);
+    } catch (docError) {
+      console.warn('[Outreach] Document send failed, falling back to sending text message:', docError);
+      if (task.messagePayload) {
+        await adapter.injectPayload(task.messagePayload);
+        await adapter.triggerSend();
+        throw new Error(`PDF could not be attached (${docError.message}), but text message was delivered.`);
+      }
+      throw docError;
+    }
   } else if (file) {
     await adapter.sendMediaWithCaption(file, task.messagePayload);
   } else {
